@@ -15,6 +15,8 @@ import java.net.InetSocketAddress;
 public class DataReceiver implements VComponent {
     private final Logger logger = LoggerFactory.getLogger(getClass());
 
+    private String forwardHost;
+
     private int listenPort;
 
     private int forwardPort;
@@ -24,7 +26,8 @@ public class DataReceiver implements VComponent {
     private EventLoopGroup eventLoopGroup = NettyComponentConfig.getNioEventLoopGroup();
 
 
-    public DataReceiver(int listenPort, int forwardPort) {
+    public DataReceiver(int listenPort,String forwardHost, int forwardPort) {
+        this.forwardHost = forwardHost;
         this.listenPort = listenPort;
         this.forwardPort = forwardPort;
     }
@@ -44,7 +47,7 @@ public class DataReceiver implements VComponent {
                 ChannelPipeline pipeline = channel.pipeline();
                 pipeline.addLast(ByteReadHandler.NAME, byteReadHandler);
 
-                ForWardContext forWardContext = new ForWardContext(forwardPort,byteReadHandler);
+                ForWardContext forWardContext = new ForWardContext(forwardHost,forwardPort,byteReadHandler);
                 forWardContext.start();
 
             }

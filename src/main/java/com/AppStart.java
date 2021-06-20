@@ -75,6 +75,6 @@ public class AppStart {
         }
 
 
-        new DataReceiver(GlobalConfig.DEFAULT_INSTANT.getListenPort(), GlobalConfig.DEFAULT_INSTANT.getForwardPort()).start();
+        new DataReceiver(GlobalConfig.DEFAULT_INSTANT.getListenPort(),GlobalConfig.DEFAULT_INSTANT.getForwardHost(), GlobalConfig.DEFAULT_INSTANT.getForwardPort()).start();
     }
 }

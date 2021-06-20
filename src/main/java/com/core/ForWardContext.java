@@ -11,6 +11,8 @@ import java.net.InetSocketAddress;
 
 public class ForWardContext implements VComponent {
 
+    private String forwardHost;
+
     private int forwardPort;
 
     private ByteReadHandler byteReadHandler;
@@ -21,9 +23,9 @@ public class ForWardContext implements VComponent {
 
     private EventLoopGroup eventLoopGroup = NettyComponentConfig.getNioEventLoopGroup();
 
-    public ForWardContext( int forwardPort,ByteReadHandler byteReadHandler) {
+    public ForWardContext(String forwardHost, int forwardPort, ByteReadHandler byteReadHandler) {
         this.forwardPort = forwardPort;
-
+        this.forwardHost = forwardHost;
         this.byteReadHandler = byteReadHandler;
     }
 
@@ -50,7 +52,7 @@ public class ForWardContext implements VComponent {
                 .handler(channelInitializer);
 
 
-        InetSocketAddress inetSocketAddress = new InetSocketAddress("127.0.0.1",  this.forwardPort );
+        InetSocketAddress inetSocketAddress = new InetSocketAddress(forwardHost, this.forwardPort);
         ChannelFuture connect = b.connect(inetSocketAddress);
 
         try {

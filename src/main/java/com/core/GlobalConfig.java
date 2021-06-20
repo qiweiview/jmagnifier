@@ -1,8 +1,11 @@
 package com.core;
 
 
+import lombok.Data;
+
 import java.io.File;
 
+@Data
 public class GlobalConfig {
 
     public static GlobalConfig DEFAULT_INSTANT;
@@ -23,6 +26,10 @@ public class GlobalConfig {
 
     private int forwardPort;
 
+    private String forwardHost;
+
+
+
 
     public void verifyConfiguration() {
         if (listenPort < 0 || listenPort > 65536 || forwardPort < 0 || forwardPort > 65536) {
@@ -37,76 +44,5 @@ public class GlobalConfig {
         }
     }
 
-    public boolean isConsolePrint() {
-        return consolePrint;
-    }
 
-    public void setConsolePrint(boolean consolePrint) {
-        this.consolePrint = consolePrint;
-    }
-
-    public boolean isLogDump() {
-        return logDump;
-    }
-
-    public void setLogDump(boolean logDump) {
-        this.logDump = logDump;
-    }
-
-    public String getDumpPath() {
-        return dumpPath;
-    }
-
-    public void setDumpPath(String dumpPath) {
-        this.dumpPath = dumpPath;
-    }
-
-
-    public static GlobalConfig getDefaultInstant() {
-        return DEFAULT_INSTANT;
-    }
-
-    public static void setDefaultInstant(GlobalConfig defaultInstant) {
-        DEFAULT_INSTANT = defaultInstant;
-    }
-
-    public File getDumpFile() {
-        return dumpFile;
-    }
-
-    public void setDumpFile(File dumpFile) {
-        this.dumpFile = dumpFile;
-    }
-
-    public int getListenPort() {
-        return listenPort;
-    }
-
-    public void setListenPort(int listenPort) {
-        this.listenPort = listenPort;
-    }
-
-    public int getForwardPort() {
-        return forwardPort;
-    }
-
-    public void setForwardPort(int forwardPort) {
-        this.forwardPort = forwardPort;
-    }
-
-    public boolean isIgnoreHex() {
-        return ignoreHex;
-    }
-
-    public void setIgnoreHex(boolean ignoreHex) {
-        this.ignoreHex = ignoreHex;
-    }
-
-    public boolean isIgnoreString() {
-        return ignoreString;
-    }
-
-    public void setIgnoreString(boolean ignoreString) {
-        this.ignoreString = ignoreString;
-    }
 }
