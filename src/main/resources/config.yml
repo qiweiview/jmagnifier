@@ -1,8 +1,8 @@
-listenPort: 889
-forwardHost: 127.0.0.1
-forwardPort: 8848
-consolePrint: true
-logDump: true
-ignoreHex: true
-ignoreString: false
-dumpPath: "D:\\NewWorkSpace\\Tools\\jmagnifier"
+listenPort: 999 # 监听端口
+forwardHost: baicu.com # 转发目标域名
+forwardPort: 80 # 转发目标端口
+consolePrint: true # 是否控制台输出
+logDump: true # 是否文件输出
+ignoreHex: true # 文件输出是否忽略hex
+ignoreString: false # 文件输出是否忽略字符串
+dumpPath: "D:\\java_tools\\jmagnifier(tcp_dump)" # 文件输出位置
