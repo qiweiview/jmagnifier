@@ -1,0 +1,7 @@
+listenPort: 889
+forwardPort: 8848
+consolePrint: true
+logDump: true
+ignoreHex: true
+ignoreString: false
+dumpPath: "D:\\NewWorkSpace\\Tools\\jmagnifier"
