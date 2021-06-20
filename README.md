@@ -1,6 +1,10 @@
 # Java Magnifier
 
-* 功能：转发并记录tcp报文
+![jdk12](https://img.shields.io/badge/jdk-8-orange.svg)
+
+
+## 功能：
+* 转发并记录tcp报文
 
 ## 配置文件
 ```yaml
