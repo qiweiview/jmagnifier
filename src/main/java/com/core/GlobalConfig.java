@@ -37,7 +37,8 @@ public class GlobalConfig {
         }
 
 
-        if (new File(dumpPath).exists()) {
+        //磁盘打印才验证地址
+        if (logDump && new File(dumpPath).exists()) {
             dumpFile = new File(dumpPath + File.separator + "dump");
         } else {
             throw new RuntimeException("direct is not exist");

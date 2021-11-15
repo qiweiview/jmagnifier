@@ -70,7 +70,8 @@ public class AppStart {
             }
 
         } catch (Exception e) {
-            logger.error("parse config file:" + file + "fail" + e);
+            e.printStackTrace();
+            logger.error("parse config file:" + file + "fail " + e);
             ApplicationExit.exit();
         }
 
