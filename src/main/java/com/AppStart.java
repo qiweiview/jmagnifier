@@ -52,6 +52,7 @@ public class AppStart {
 
         try {
             GlobalConfig globalConfig = ymlParser.parseFile(file, GlobalConfig.class);
+            //配置验证
             globalConfig.verifyConfiguration();
             GlobalConfig.DEFAULT_INSTANT = globalConfig;
 
@@ -70,12 +71,11 @@ public class AppStart {
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
-            logger.error("parse config file:" + file + "fail " + e);
+            logger.error("parse config file:" + file + " fail ", e);
             ApplicationExit.exit();
         }
 
 
-        new DataReceiver(GlobalConfig.DEFAULT_INSTANT.getListenPort(),GlobalConfig.DEFAULT_INSTANT.getForwardHost(), GlobalConfig.DEFAULT_INSTANT.getForwardPort()).start();
+        new DataReceiver(GlobalConfig.DEFAULT_INSTANT.getListenPort(), GlobalConfig.DEFAULT_INSTANT.getForwardHost(), GlobalConfig.DEFAULT_INSTANT.getForwardPort()).start();
     }
 }

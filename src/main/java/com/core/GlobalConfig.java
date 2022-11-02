@@ -2,9 +2,11 @@ package com.core;
 
 
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
 
+@Slf4j
 @Data
 public class GlobalConfig {
 
@@ -29,19 +31,24 @@ public class GlobalConfig {
     private String forwardHost;
 
 
-
-
+    /**
+     * 验证
+     */
     public void verifyConfiguration() {
         if (listenPort < 0 || listenPort > 65536 || forwardPort < 0 || forwardPort > 65536) {
             throw new RuntimeException("unSupport port");
         }
 
-
-        //磁盘打印才验证地址
-        if (logDump && new File(dumpPath).exists()) {
+        if (logDump) {
+            //todo 磁盘输出
+            if (!new File(dumpPath).exists()) {
+                throw new RuntimeException("目标输出路径: " + dumpPath + " 不存在");
+            }
             dumpFile = new File(dumpPath + File.separator + "dump");
+
         } else {
-            throw new RuntimeException("direct is not exist");
+            //todo 磁盘不输出
+            log.info("配置不写入日志到磁盘中");
         }
     }
 
