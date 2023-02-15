@@ -4,19 +4,23 @@ package com.core;
 import lombok.Data;
 
 import java.io.File;
+import java.util.List;
 
 @Data
 public class GlobalConfig {
 
+
     public static GlobalConfig DEFAULT_INSTANT;
 
-    private boolean consolePrint = false;
+    private boolean consoleDump = false;
 
     private boolean logDump = false;
 
-    private boolean ignoreHex = false;
+    private boolean dumpHex = false;
 
-    private boolean ignoreString = false;
+    private boolean dumpString = false;
+
+    private String type;
 
     private String dumpPath;
 
@@ -28,7 +32,10 @@ public class GlobalConfig {
 
     private String forwardHost;
 
+    /*镜像返回，将入参打印*/
+    private boolean mirrorResponse;
 
+    private List<String> matchLocation;
 
 
     public void verifyConfiguration() {

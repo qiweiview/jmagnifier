@@ -7,29 +7,33 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import io.netty.handler.codec.http.HttpObjectAggregator;
+import io.netty.handler.codec.http.HttpServerCodec;
+import lombok.extern.slf4j.Slf4j;
 
 import java.net.InetSocketAddress;
 
+@Slf4j
 public class DataReceiver implements VComponent {
-    private final Logger logger = LoggerFactory.getLogger(getClass());
 
-    private String forwardHost;
+    private GlobalConfig globalConfig;
 
-    private int listenPort;
-
-    private int forwardPort;
+//    private String forwardHost;
+//
+//    private int listenPort;
+//
+//    private int forwardPort;
 
     private ServerBootstrap serverBootstrap;
 
     private EventLoopGroup eventLoopGroup = NettyComponentConfig.getNioEventLoopGroup();
 
 
-    public DataReceiver(int listenPort,String forwardHost, int forwardPort) {
-        this.forwardHost = forwardHost;
-        this.listenPort = listenPort;
-        this.forwardPort = forwardPort;
+    public DataReceiver(GlobalConfig globalConfig) {
+        this.globalConfig = globalConfig;
+//        this.forwardHost = forwardHost;
+//        this.listenPort = listenPort;
+//        this.forwardPort = forwardPort;
     }
 
     @Override
@@ -41,14 +45,26 @@ public class DataReceiver implements VComponent {
             @Override
             protected void initChannel(Channel channel) throws Exception {
 
-
-
-                ByteReadHandler byteReadHandler = new ByteReadHandler();
                 ChannelPipeline pipeline = channel.pipeline();
-                pipeline.addLast(ByteReadHandler.NAME, byteReadHandler);
+                if ("HTTP".equalsIgnoreCase(globalConfig.getType())) {
+                    //todo http包处理
 
-                ForWardContext forWardContext = new ForWardContext(forwardHost,forwardPort,byteReadHandler);
-                forWardContext.start();
+                    String http = "http";//HttpServerCodec
+                    String oag = "oag";//HttpObjectAggregator
+                    HttpReadHandle httpReadHandle = new HttpReadHandle(globalConfig);
+                    pipeline.addLast(http, new HttpServerCodec());
+                    pipeline.addAfter(http, oag, new HttpObjectAggregator(2 * 1024 * 1024));//限制缓冲最大值为2mb
+                    pipeline.addAfter(oag, HttpReadHandle.NAME, httpReadHandle);
+//                    HTTPForWardContext httpForWardContext = new HTTPForWardContext(globalConfig.getForwardHost(), globalConfig.getForwardPort(), httpReadHandle);
+//                    httpForWardContext.start();
+                } else {
+                    //TODO 默认tcp包处理
+                    ByteReadHandler byteReadHandler = new ByteReadHandler();
+                    pipeline.addLast(ByteReadHandler.NAME, byteReadHandler);
+                    TCPForWardContext TCPForWardContext = new TCPForWardContext(globalConfig.getForwardHost(), globalConfig.getForwardPort(), byteReadHandler);
+                    TCPForWardContext.start();
+                }
+
 
             }
         };
@@ -56,13 +72,13 @@ public class DataReceiver implements VComponent {
         serverBootstrap = new ServerBootstrap();
         serverBootstrap.group(eventLoopGroup)
                 .channel(NioServerSocketChannel.class)//
-                .localAddress(new InetSocketAddress(listenPort))//　
+                .localAddress(new InetSocketAddress(globalConfig.getListenPort()))//　
                 .childHandler(channelInitializer);
 
         try {
             serverBootstrap.bind().sync();
         } catch (Exception e) {
-            logger.error("bind server port:" + listenPort + " fail cause:" + e);
+            log.error("bind server port:" + globalConfig.getListenPort() + " fail cause:" + e);
         }
 
     }

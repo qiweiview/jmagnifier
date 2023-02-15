@@ -6,15 +6,21 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import sun.misc.HexDumpEncoder;
 
 import java.net.InetSocketAddress;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-
+/**
+ * 入参处理器
+ */
+@Slf4j
 public class ByteReadHandler extends ChannelInboundHandlerAdapter implements DataSwap {
-    private final Logger logger = LoggerFactory.getLogger(getClass());
+    private static final ExecutorService executorService = Executors.newFixedThreadPool(2);
+
+    private static final HexDumpEncoder hexDumpEncoder = new HexDumpEncoder();
 
     public static final String NAME = "BYTE_READER";
 
@@ -37,6 +43,13 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
         local = ((InetSocketAddress) channel.localAddress()).getPort();
     }
 
+    /**
+     * 读取消息
+     *
+     * @param ctx
+     * @param msg
+     * @throws Exception
+     */
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         ByteBuf byteBuf = (ByteBuf) msg;
@@ -45,41 +58,69 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
         byteBuf.release();
 
 
-        handleData(bytes);
+        if (byteBuf != null) {
+            //处理入参数据
 
+            ByteDataProcessor.checkUnifiedOutput(() -> {
+                //todo 打印详情
+
+                String key = "";
+                int listenPort = GlobalConfig.DEFAULT_INSTANT.getListenPort();
+                if (remote == listenPort || local == listenPort) {
+                    key = "request";
+                }
+
+                int forwardPort = GlobalConfig.DEFAULT_INSTANT.getForwardPort();
+                if (remote == forwardPort || local == forwardPort) {
+                    key = "response";
+                }
+
+                HexDumpEncoder hexDumpEncoder = new HexDumpEncoder();
+                String encode = hexDumpEncoder.encode(bytes);
+                ByteDataProcessor.dump2Console(key, encode);
+
+            }, () -> {
+                //todo 存储详情
+                StringBuilder stringBuilder = new StringBuilder();
+
+                String key = "";
+                int listenPort = GlobalConfig.DEFAULT_INSTANT.getListenPort();
+                if (remote == listenPort || local == listenPort) {
+                    key = "request";
+                }
+
+                int forwardPort = GlobalConfig.DEFAULT_INSTANT.getForwardPort();
+                if (remote == forwardPort || local == forwardPort) {
+                    key = "response";
+                }
+
+                if (GlobalConfig.DEFAULT_INSTANT.isDumpHex()) {
+                    stringBuilder.append("========================= hex dump " + key + " ====================\n\r");
+                    stringBuilder.append(hexDumpEncoder.encode(bytes) + "\n\r");
+
+                }
+
+                if (GlobalConfig.DEFAULT_INSTANT.isDumpString()) {
+                    stringBuilder.append("========================= str dump " + key + " ====================\n\r");
+                    stringBuilder.append(new String(bytes) + "\n\r");
+                }
+
+                byte[] dump = stringBuilder.toString().getBytes();
+                ByteDataProcessor.dump2File(dump);
+
+            });
+        }
+
+        //发送数据至下游
         sendData(bytes);
 
 
     }
 
-    public void handleData(byte[] bytes) {
-        if (bytes == null) {
-            return;
-        }
-
-        if (GlobalConfig.DEFAULT_INSTANT.isConsolePrint()) {
-            String key = "";
-            int listenPort = GlobalConfig.DEFAULT_INSTANT.getListenPort();
-            if (remote == listenPort || local == listenPort) {
-                key = "request";
-            }
-
-            int forwardPort = GlobalConfig.DEFAULT_INSTANT.getForwardPort();
-            if (remote == forwardPort || local == forwardPort) {
-                key = "response";
-            }
-            ByteDataProcessor.dump2Console(key, bytes);
-        }
-
-        if (GlobalConfig.DEFAULT_INSTANT.isLogDump()) {
-            ByteDataProcessor.dump2File(bytes, remote, local);
-        }
-    }
-
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        logger.error("get exception cause: " + cause);
+        log.error("get exception cause: " + cause);
     }
 
 
@@ -99,10 +140,9 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
     @Override
     public void sendData(byte[] bytes) {
         if (dataSwap != null) {
-
             dataSwap.receiveData(bytes);
         } else {
-            logger.error("the dataSwap is null");
+            log.error("the dataSwap is null");
         }
     }
 
@@ -110,9 +150,10 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
     @Override
     public void receiveData(byte[] bytes) {
         if (channelHandlerContext != null) {
+            //todo 响应写出
             channelHandlerContext.writeAndFlush(Unpooled.copiedBuffer(bytes));
         } else {
-            logger.error("the context is null");
+            log.error("the context is null");
         }
     }
 

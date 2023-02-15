@@ -1,8 +1,20 @@
-listenPort: 999 # 监听端口
-forwardHost: baicu.com # 转发目标域名
+#
+type: "http" # tcp/http
+listenPort: 9999 # 监听端口
+
+# 对端地址
+forwardHost: "101.34.166.251" # 转发目标域名
 forwardPort: 80 # 转发目标端口
-consolePrint: true # 是否控制台输出
-logDump: true # 是否文件输出
-ignoreHex: true # 文件输出是否忽略hex
-ignoreString: false # 文件输出是否忽略字符串
+
+# 输出相关
+consoleDump: true # 控制台输出
+logDump: true # 文件输出
+
+dumpHex: false # 输出hex到文件
+dumpString: true # 输出明文字符串到文件
 dumpPath: "D:\\java_tools\\jmagnifier(tcp_dump)" # 文件输出位置
+
+# web 配置
+mirrorResponse: false
+matchLocation:
+#  - "/gateway"

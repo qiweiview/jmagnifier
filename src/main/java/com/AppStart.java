@@ -55,18 +55,24 @@ public class AppStart {
             globalConfig.verifyConfiguration();
             GlobalConfig.DEFAULT_INSTANT = globalConfig;
 
+            System.out.println("\n\r Run with " + globalConfig.getType() + " mode");
+
             System.out.println("\n\rForward data from port " + GlobalConfig.DEFAULT_INSTANT.getListenPort() + " ------- to -----> port " + GlobalConfig.DEFAULT_INSTANT.getForwardPort());
 
             if (GlobalConfig.DEFAULT_INSTANT.isLogDump()) {
                 System.out.println("\n\rDump file output to " + GlobalConfig.DEFAULT_INSTANT.getDumpFile().getAbsolutePath());
             }
 
-            if (GlobalConfig.DEFAULT_INSTANT.isIgnoreString()) {
-                System.out.println("\n\rDump will not print string");
+            if (GlobalConfig.DEFAULT_INSTANT.isDumpString()) {
+                System.out.println("\n\rDump will  print string");
+            } else {
+                System.out.println("\n\rDump will  not print string");
             }
 
-            if (GlobalConfig.DEFAULT_INSTANT.isIgnoreHex()) {
-                System.out.println("\n\rDump will not print hex");
+            if (GlobalConfig.DEFAULT_INSTANT.isDumpHex()) {
+                System.out.println("\n\rDump will  print hex");
+            } else {
+                System.out.println("\n\rDump will  not print hex");
             }
 
         } catch (Exception e) {
@@ -75,6 +81,8 @@ public class AppStart {
         }
 
 
-        new DataReceiver(GlobalConfig.DEFAULT_INSTANT.getListenPort(),GlobalConfig.DEFAULT_INSTANT.getForwardHost(), GlobalConfig.DEFAULT_INSTANT.getForwardPort()).start();
+        /*启动数据接收器*/
+        new DataReceiver(GlobalConfig.DEFAULT_INSTANT)
+                .start();
     }
 }
