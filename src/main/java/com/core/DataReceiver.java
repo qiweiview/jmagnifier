@@ -7,13 +7,12 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 import java.net.InetSocketAddress;
 
+@Slf4j
 public class DataReceiver implements VComponent {
-    private final Logger logger = LoggerFactory.getLogger(getClass());
 
     private String forwardHost;
 
@@ -46,7 +45,7 @@ public class DataReceiver implements VComponent {
                 ChannelPipeline pipeline = channel.pipeline();
                 pipeline.addLast(ByteReadHandler.NAME, byteReadHandler);
 
-                ForWardContext forWardContext = new ForWardContext(forwardHost,forwardPort,byteReadHandler);
+                TCPForWardContext forWardContext = new TCPForWardContext(forwardHost, forwardPort, byteReadHandler);
                 forWardContext.start();
 
             }
@@ -61,7 +60,7 @@ public class DataReceiver implements VComponent {
         try {
             serverBootstrap.bind().sync();
         } catch (Exception e) {
-            logger.error("bind server port:" + listenPort + " fail cause:" + e);
+            log.error("bind server port:" + listenPort + " fail cause:" + e);
         }
 
     }

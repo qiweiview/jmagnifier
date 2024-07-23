@@ -1,18 +1,16 @@
 package com.core;
 
 import com.model.GlobalConfig;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import sun.misc.HexDumpEncoder;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+@Slf4j
 public class ByteDataProcessor {
-
-    private static final Logger logger = LoggerFactory.getLogger(ByteDataProcessor.class);
     private static final HexDumpEncoder hexDumpEncoder = new HexDumpEncoder();
     private static ExecutorService executorService = Executors.newFixedThreadPool(2);
 
@@ -50,7 +48,7 @@ public class ByteDataProcessor {
             try {
                 FileUtils.writeByteArrayToFile(GlobalConfig.DEFAULT_INSTANT.getDumpFile(), dump, true);
             } catch (IOException e) {
-                logger.error("dump error cause " + e);
+                log.error("dump error cause " + e);
             }
         };
 

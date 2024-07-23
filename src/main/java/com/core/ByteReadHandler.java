@@ -7,14 +7,14 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 import java.net.InetSocketAddress;
 
 
+@Slf4j
 public class ByteReadHandler extends ChannelInboundHandlerAdapter implements DataSwap {
-    private final Logger logger = LoggerFactory.getLogger(getClass());
+
 
     public static final String NAME = "BYTE_READER";
 
@@ -89,7 +89,7 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        logger.error("get exception", cause);
+        log.error("get exception", cause);
     }
 
 
@@ -112,7 +112,7 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
 
             dataSwap.receiveData(bytes);
         } else {
-            logger.error("the dataSwap is null");
+            log.error("the dataSwap is null");
         }
     }
 
@@ -122,7 +122,7 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
         if (channelHandlerContext != null) {
             channelHandlerContext.writeAndFlush(Unpooled.copiedBuffer(bytes));
         } else {
-            logger.error("the context is null");
+            log.error("the context is null");
         }
     }
 
