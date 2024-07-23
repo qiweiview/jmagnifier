@@ -1,5 +1,6 @@
 package com.core;
 
+import com.model.GlobalConfig;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
@@ -8,7 +9,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.misc.HexDumpEncoder;
 
 import java.net.InetSocketAddress;
 
@@ -27,6 +27,15 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
     private int remote;
 
     private volatile boolean close = false;
+
+    private int listenPort;
+
+    private int forwardPort;
+
+    public ByteReadHandler(int listenPort, int forwardPort) {
+        this.listenPort = listenPort;
+        this.forwardPort = forwardPort;
+    }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
@@ -57,14 +66,15 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
             return;
         }
 
+        //控制台输出
         if (GlobalConfig.DEFAULT_INSTANT.isConsolePrint()) {
             String key = "";
-            int listenPort = GlobalConfig.DEFAULT_INSTANT.getListenPort();
+
             if (remote == listenPort || local == listenPort) {
                 key = "request";
             }
 
-            int forwardPort = GlobalConfig.DEFAULT_INSTANT.getForwardPort();
+
             if (remote == forwardPort || local == forwardPort) {
                 key = "response";
             }
@@ -72,14 +82,14 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
         }
 
         if (GlobalConfig.DEFAULT_INSTANT.isLogDump()) {
-            ByteDataProcessor.dump2File(bytes, remote, local);
+            ByteDataProcessor.dump2File(bytes, remote, local, listenPort, forwardPort);
         }
     }
 
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        logger.error("get exception cause: " + cause);
+        logger.error("get exception", cause);
     }
 
 

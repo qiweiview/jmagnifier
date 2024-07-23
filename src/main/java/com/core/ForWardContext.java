@@ -33,7 +33,7 @@ public class ForWardContext implements VComponent {
     public void start() {
         Bootstrap b = new Bootstrap();
 
-        forwardByteReadHandler = new ByteReadHandler();
+        forwardByteReadHandler = new ByteReadHandler(-1, forwardPort);
 
         forwardByteReadHandler.setTarget(byteReadHandler);
         byteReadHandler.setTarget(forwardByteReadHandler);

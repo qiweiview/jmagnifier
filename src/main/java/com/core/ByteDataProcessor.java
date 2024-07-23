@@ -1,5 +1,6 @@
 package com.core;
 
+import com.model.GlobalConfig;
 import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,19 +17,18 @@ public class ByteDataProcessor {
     private static ExecutorService executorService = Executors.newFixedThreadPool(2);
 
 
-
-    public static void dump2File(byte[] bytes, int remote, int local) {
+    public static void dump2File(byte[] bytes, int remote, int local, int listenPort, int forwardPort) {
 
         Runnable runnable=() -> {
             StringBuilder stringBuilder = new StringBuilder();
 
             String key ="";
-            int listenPort = GlobalConfig.DEFAULT_INSTANT.getListenPort();
+
             if (remote==listenPort||local==listenPort){
                 key="request";
             }
 
-            int forwardPort = GlobalConfig.DEFAULT_INSTANT.getForwardPort();
+
             if (remote==forwardPort||local==forwardPort){
                 key="response";
             }

@@ -42,8 +42,7 @@ public class DataReceiver implements VComponent {
             protected void initChannel(Channel channel) throws Exception {
 
 
-
-                ByteReadHandler byteReadHandler = new ByteReadHandler();
+                ByteReadHandler byteReadHandler = new ByteReadHandler(listenPort, forwardPort);
                 ChannelPipeline pipeline = channel.pipeline();
                 pipeline.addLast(ByteReadHandler.NAME, byteReadHandler);
 

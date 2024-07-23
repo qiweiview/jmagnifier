@@ -1,8 +1,14 @@
-listenPort: 999 # 监听端口
-forwardHost: baicu.com # 转发目标域名
-forwardPort: 80 # 转发目标端口
-consolePrint: true # 是否控制台输出
-logDump: true # 是否文件输出
+consolePrint: false # 是否控制台输出
+logDump: false # 是否文件输出
 ignoreHex: true # 文件输出是否忽略hex
 ignoreString: false # 文件输出是否忽略字符串
 dumpPath: "D:\\java_tools\\jmagnifier(tcp_dump)" # 文件输出位置
+mappings:
+  - name: 'r1'
+    listenPort: 10087 # 监听端口
+    forwardHost: qw607.com # 转发目标域名
+    forwardPort: 80 # 转发目标端口
+  - name: 'r2'
+    listenPort: 10088 # 监听端口
+    forwardHost: qw607.com # 转发目标域名
+    forwardPort: 80 # 转发目标端口

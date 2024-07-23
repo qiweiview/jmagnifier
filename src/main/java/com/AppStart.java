@@ -2,13 +2,15 @@ package com;
 
 import ch.qos.logback.classic.Level;
 import com.core.DataReceiver;
-import com.core.GlobalConfig;
+import com.model.GlobalConfig;
+import com.model.Mapping;
 import com.util.ApplicationExit;
 import com.util.YmlParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.List;
 
 
 public class AppStart {
@@ -36,7 +38,7 @@ public class AppStart {
         root.setLevel(Level.toLevel("INFO"));
 
         if (args.length < 1) {
-            logger.error("missing startup parameters");
+            logger.error("缺失启动参数");
             ApplicationExit.exit();
         }
 
@@ -45,7 +47,7 @@ public class AppStart {
 
         File file = new File(configFile);
         if (!file.exists()) {
-            logger.error("can not found:" + file);
+            logger.error("无法找到配置文件:" + file);
             ApplicationExit.exit();
         }
 
@@ -56,7 +58,7 @@ public class AppStart {
             globalConfig.verifyConfiguration();
             GlobalConfig.DEFAULT_INSTANT = globalConfig;
 
-            System.out.println("\n\rForward data from port " + GlobalConfig.DEFAULT_INSTANT.getListenPort() + " ------- to -----> port " + GlobalConfig.DEFAULT_INSTANT.getForwardPort());
+            printMapping(globalConfig.getMappings());
 
             if (GlobalConfig.DEFAULT_INSTANT.isLogDump()) {
                 System.out.println("\n\rDump file output to " + GlobalConfig.DEFAULT_INSTANT.getDumpFile().getAbsolutePath());
@@ -76,6 +78,32 @@ public class AppStart {
         }
 
 
-        new DataReceiver(GlobalConfig.DEFAULT_INSTANT.getListenPort(), GlobalConfig.DEFAULT_INSTANT.getForwardHost(), GlobalConfig.DEFAULT_INSTANT.getForwardPort()).start();
+        startMappingServer(GlobalConfig.DEFAULT_INSTANT.getMappings());
+
+    }
+
+    /**
+     * 启动映射服务
+     *
+     * @param mappingList
+     */
+    private static void startMappingServer(List<Mapping> mappingList) {
+        mappingList.forEach(x -> {
+            new DataReceiver(x.getListenPort(), x.getForwardHost(), x.getForwardPort())
+                    .start();
+        });
+    }
+
+    /**
+     * 打印映射关系
+     *
+     * @param mappingList
+     */
+    private static void printMapping(List<Mapping> mappingList) {
+        mappingList.forEach(x -> {
+            System.out.println("\n\r" + x.getName() + " rule: listen local port " + x.getListenPort() + " ------- to -----> port " + x.getForwardPort());
+
+        });
+
     }
 }
