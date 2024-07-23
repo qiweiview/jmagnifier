@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 
-public class ForWardContext implements VComponent {
+public class TCPForWardContext implements VComponent {
 
     private String forwardHost;
 
@@ -23,7 +23,7 @@ public class ForWardContext implements VComponent {
 
     private EventLoopGroup eventLoopGroup = NettyComponentConfig.getNioEventLoopGroup();
 
-    public ForWardContext(String forwardHost, int forwardPort, ByteReadHandler byteReadHandler) {
+    public TCPForWardContext(String forwardHost, int forwardPort, ByteReadHandler byteReadHandler) {
         this.forwardPort = forwardPort;
         this.forwardHost = forwardHost;
         this.byteReadHandler = byteReadHandler;
@@ -35,6 +35,7 @@ public class ForWardContext implements VComponent {
 
         forwardByteReadHandler = new ByteReadHandler(-1, forwardPort);
 
+        //两互绑
         forwardByteReadHandler.setTarget(byteReadHandler);
         byteReadHandler.setTarget(forwardByteReadHandler);
 
