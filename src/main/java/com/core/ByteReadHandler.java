@@ -1,6 +1,5 @@
 package com.core;
 
-import com.model.GlobalConfig;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
@@ -8,8 +7,6 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import lombok.extern.slf4j.Slf4j;
-
-import java.net.InetSocketAddress;
 
 
 @Slf4j
@@ -22,28 +19,22 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
 
     private DataSwap dataSwap;
 
-    private int local;
+    private Boolean consolePrint;
 
-    private int remote;
+
 
     private volatile boolean close = false;
 
-    private int listenPort;
 
-    private int forwardPort;
+    public ByteReadHandler(Boolean consolePrint) {
+        this.consolePrint = consolePrint;
 
-    public ByteReadHandler(int listenPort, int forwardPort) {
-        this.listenPort = listenPort;
-        this.forwardPort = forwardPort;
     }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         this.channelHandlerContext = ctx;
         Channel channel = channelHandlerContext.channel();
-        remote = ((InetSocketAddress) channel.remoteAddress()).getPort();
-
-        local = ((InetSocketAddress) channel.localAddress()).getPort();
     }
 
     @Override
@@ -53,9 +44,10 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
         byteBuf.discardReadBytes();
         byteBuf.release();
 
-
+        //处理数据
         handleData(bytes);
 
+        //发送数据
         sendData(bytes);
 
 
@@ -66,24 +58,10 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
             return;
         }
 
-        //控制台输出
-        if (GlobalConfig.DEFAULT_INSTANT.isConsolePrint()) {
-            String key = "";
-
-            if (remote == listenPort || local == listenPort) {
-                key = "request";
-            }
-
-
-            if (remote == forwardPort || local == forwardPort) {
-                key = "response";
-            }
-            ByteDataProcessor.dump2Console(key, bytes);
+        if (consolePrint != null && consolePrint) {
+            log.info("receive data from client:\n{}", new String(bytes));
         }
 
-        if (GlobalConfig.DEFAULT_INSTANT.isLogDump()) {
-            ByteDataProcessor.dump2File(bytes, remote, local, listenPort, forwardPort);
-        }
     }
 
 

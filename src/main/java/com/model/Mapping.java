@@ -11,4 +11,6 @@ public class Mapping {
     private String name;
 
     private String forwardHost;
+
+    private Boolean consolePrint;
 }

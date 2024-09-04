@@ -1,5 +1,6 @@
 package com.core;
 
+import com.model.Mapping;
 import com.util.NettyComponentConfig;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
@@ -14,6 +15,8 @@ import java.net.InetSocketAddress;
 @Slf4j
 public class DataReceiver implements VComponent {
 
+    private Mapping mapping;
+
     private String forwardHost;
 
     private int listenPort;
@@ -25,10 +28,11 @@ public class DataReceiver implements VComponent {
     private EventLoopGroup eventLoopGroup = NettyComponentConfig.getNioEventLoopGroup();
 
 
-    public DataReceiver(int listenPort,String forwardHost, int forwardPort) {
-        this.forwardHost = forwardHost;
-        this.listenPort = listenPort;
-        this.forwardPort = forwardPort;
+    public DataReceiver(Mapping mapping) {
+        this.forwardHost = mapping.getForwardHost();
+        this.listenPort = mapping.getListenPort();
+        this.forwardPort = mapping.getForwardPort();
+        this.mapping = mapping;
     }
 
     @Override
@@ -41,10 +45,11 @@ public class DataReceiver implements VComponent {
             protected void initChannel(Channel channel) throws Exception {
 
 
-                ByteReadHandler byteReadHandler = new ByteReadHandler(listenPort, forwardPort);
+                ByteReadHandler byteReadHandler = new ByteReadHandler(mapping.getConsolePrint());
                 ChannelPipeline pipeline = channel.pipeline();
                 pipeline.addLast(ByteReadHandler.NAME, byteReadHandler);
 
+                //连接器
                 TCPForWardContext forWardContext = new TCPForWardContext(forwardHost, forwardPort, byteReadHandler);
                 forWardContext.start();
 

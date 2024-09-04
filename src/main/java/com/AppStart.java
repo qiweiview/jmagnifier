@@ -60,24 +60,13 @@ public class AppStart {
 
             printMapping(globalConfig.getMappings());
 
-            if (GlobalConfig.DEFAULT_INSTANT.isLogDump()) {
-                System.out.println("\n\rDump file output to " + GlobalConfig.DEFAULT_INSTANT.getDumpFile().getAbsolutePath());
-            }
-
-            if (GlobalConfig.DEFAULT_INSTANT.isIgnoreString()) {
-                System.out.println("\n\rDump will not print string");
-            }
-
-            if (GlobalConfig.DEFAULT_INSTANT.isIgnoreHex()) {
-                System.out.println("\n\rDump will not print hex");
-            }
-
         } catch (Exception e) {
             logger.error("parse config file:" + file + " fail ", e);
             ApplicationExit.exit();
         }
 
 
+        //启动映射服务
         startMappingServer(GlobalConfig.DEFAULT_INSTANT.getMappings());
 
     }
@@ -88,9 +77,10 @@ public class AppStart {
      * @param mappingList
      */
     private static void startMappingServer(List<Mapping> mappingList) {
+        //循环启动
         mappingList.forEach(x -> {
-            new DataReceiver(x.getListenPort(), x.getForwardHost(), x.getForwardPort())
-                    .start();
+            DataReceiver dataReceiver = new DataReceiver(x);
+            dataReceiver.start();
         });
     }
 

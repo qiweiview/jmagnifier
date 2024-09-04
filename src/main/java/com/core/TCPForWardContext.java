@@ -33,7 +33,7 @@ public class TCPForWardContext implements VComponent {
     public void start() {
         Bootstrap b = new Bootstrap();
 
-        forwardByteReadHandler = new ByteReadHandler(-1, forwardPort);
+        forwardByteReadHandler = new ByteReadHandler(false);
 
         //两互绑
         forwardByteReadHandler.setTarget(byteReadHandler);
