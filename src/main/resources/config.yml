@@ -1,4 +1,4 @@
-mappings:
+  i
   - name: 'r1'
     listenPort: 9300 # 监听端口
     forwardHost: 10.64.1.125 # 转发目标域名

@@ -20,7 +20,7 @@ public class GlobalConfig {
      * 验证
      */
     public void verifyConfiguration() {
-        if (mappings != null || mappings.size() == 0) {
+        if (mappings != null && mappings.size() > 0) {
             mappings = mappings.stream().filter(x -> {
                 int listenPort = x.getListenPort();
                 int forwardPort = x.getForwardPort();
