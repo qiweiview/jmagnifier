@@ -12,6 +12,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <encoding>UTF-8</encoding>
         <java.version>8</java.version>
+        <netty.version>4.1.51.Final</netty.version>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
     </properties>
@@ -37,8 +38,14 @@
 
         <dependency>
             <groupId>io.netty</groupId>
-            <artifactId>netty-all</artifactId>
-            <version>4.1.51.Final</version>
+            <artifactId>netty-codec-http</artifactId>
+            <version>${netty.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-handler</artifactId>
+            <version>${netty.version}</version>
         </dependency>
 
         <dependency>
@@ -58,6 +65,7 @@
             <artifactId>snakeyaml</artifactId>
             <version>1.26</version>
         </dependency>
+
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
@@ -98,4 +106,29 @@
         </resources>
     </build>
 
+
+    <repositories>
+        <repository>
+            <id>aliyun</id>
+            <url>https://maven.aliyun.com/repository/public</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>aliyun-plugin</id>
+            <url>https://maven.aliyun.com/repository/public</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
 </project>
