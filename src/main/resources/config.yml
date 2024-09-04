@@ -1,6 +1,1 @@
-  i
-  - name: 'r1'
-    listenPort: 9300 # 监听端口
-    forwardHost: 10.64.1.125 # 转发目标域名
-    forwardPort: 9300 # 转发目标端口
-    consolePrint: true # 控制台打印
+mappings:

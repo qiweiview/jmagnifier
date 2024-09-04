@@ -1,6 +1,7 @@
 package com.model;
 
 
+import com.util.ApplicationExit;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
@@ -20,20 +21,24 @@ public class GlobalConfig {
      * 验证
      */
     public void verifyConfiguration() {
-        if (mappings != null && mappings.size() > 0) {
-            mappings = mappings.stream().filter(x -> {
-                int listenPort = x.getListenPort();
-                int forwardPort = x.getForwardPort();
-                if (listenPort < 0 || listenPort > 65536 || forwardPort < 0 || forwardPort > 65536) {
-                    log.warn("过滤策略{}-->{}:{}", x.getListenPort(), x.getForwardHost(), x.getForwardPort());
-                    return false;
-                }
-                return true;
-            }).collect(Collectors.toList());
+        if (mappings == null || mappings.size() == 0) {
+            log.error("配置文件中没有配置任何映射策略");
+            ApplicationExit.exit();
         }
 
-
+        mappings = mappings.stream().filter(x -> {
+            int listenPort = x.getListenPort();
+            int forwardPort = x.getForwardPort();
+            if (listenPort < 0 || listenPort > 65536 || forwardPort < 0 || forwardPort > 65536) {
+                log.warn("过滤策略{}-->{}:{}", x.getListenPort(), x.getForwardHost(), x.getForwardPort());
+                return false;
+            }
+            return true;
+        }).collect(Collectors.toList());
     }
 
 
 }
+
+
+
