@@ -11,18 +11,27 @@ public class AppStartTest {
     public void commonMode() {
         String[] strings = {};
         AppStart.main(strings);
+
+        block();
     }
 
     @Test
     public void paramMode() {
         String[] strings = {"8001", "j-magnifier.com", "80"};
         AppStart.main(strings);
+
+        block();
     }
 
     @Test
     public void fileMode() {
         String[] strings = {"D:\\JAVA_WORK_SPACE\\jmagnifier\\src\\main\\resources\\config.yml"};
         AppStart.main(strings);
+
+        block();
+    }
+
+    private void block() {
         Thread thread = Thread.currentThread();
         synchronized (thread) {
             try {
