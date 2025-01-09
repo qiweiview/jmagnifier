@@ -45,12 +45,12 @@ public class DataReceiver implements VComponent {
             protected void initChannel(Channel channel) throws Exception {
 
 
-                ByteReadHandler byteReadHandler = new ByteReadHandler(mapping.getConsolePrint());
+                ByteReadHandler byteReadHandler = new ByteReadHandler(ByteReadHandler.LOCAL_TAG + "127.0.0.1:" + listenPort, mapping.getPrintRequest());
                 ChannelPipeline pipeline = channel.pipeline();
                 pipeline.addLast(ByteReadHandler.NAME, byteReadHandler);
 
                 //连接器
-                TCPForWardContext forWardContext = new TCPForWardContext(forwardHost, forwardPort, byteReadHandler);
+                TCPForWardContext forWardContext = new TCPForWardContext(mapping, byteReadHandler);
                 forWardContext.start();
 
             }

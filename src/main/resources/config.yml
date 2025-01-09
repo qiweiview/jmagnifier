@@ -1,1 +1,7 @@
 mappings:
+  - name: 'r1'
+    listenPort: 9300 # 监听端口
+    forwardHost: "qw607.com" # 转发目标域名
+    forwardPort: 80 # 转发目标端口
+    printRequest: false # 是否打印转发信息
+    printResponse: false # 是否打印转发信息

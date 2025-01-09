@@ -12,5 +12,7 @@ public class Mapping {
 
     private String forwardHost;
 
-    private Boolean consolePrint;
+    private Boolean printRequest;
+
+    private Boolean printResponse;
 }

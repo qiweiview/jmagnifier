@@ -3,7 +3,6 @@ package com.core;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +11,14 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class ByteReadHandler extends ChannelInboundHandlerAdapter implements DataSwap {
 
+    public static final String LOCAL_TAG = "[local]";
+
+    public static final String REMOTE_TAG = "[remote]";
+
 
     public static final String NAME = "BYTE_READER";
+
+    private String printPrefix;
 
     private ChannelHandlerContext channelHandlerContext;
 
@@ -26,16 +31,17 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
     private volatile boolean close = false;
 
 
-    public ByteReadHandler(Boolean consolePrint) {
+    public ByteReadHandler(String printPrefix, Boolean consolePrint) {
         this.consolePrint = consolePrint;
+        this.printPrefix = printPrefix;
 
     }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         this.channelHandlerContext = ctx;
-        Channel channel = channelHandlerContext.channel();
     }
+
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
@@ -49,17 +55,24 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
 
         //发送数据
         sendData(bytes);
-
-
     }
 
     public void handleData(byte[] bytes) {
         if (bytes == null) {
+            log.warn(printPrefix + "数据为空");
             return;
         }
 
         if (consolePrint != null && consolePrint) {
-            log.info("receive data from client:\n{}", new String(bytes));
+            log.info(printPrefix + ":\n{}", new String(bytes));
+        } else {
+            if (printPrefix.contains(LOCAL_TAG)) {
+                log.warn("收到请求，但未配置打印，修改配置中的printRequest为true");
+            }
+
+            if (printPrefix.contains(REMOTE_TAG)) {
+                log.warn("收到响应，但未配置打印，修改配置中的printResponse为true");
+            }
         }
 
     }
@@ -67,13 +80,14 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        log.error("get exception", cause);
+        log.error(printPrefix + "get exception", cause);
     }
 
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         dataSwap.closeSwap();
+        log.warn(printPrefix + "连接关闭");
     }
 
     @Override

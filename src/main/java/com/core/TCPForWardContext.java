@@ -1,5 +1,6 @@
 package com.core;
 
+import com.model.Mapping;
 import com.util.NettyComponentConfig;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
@@ -10,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import java.net.InetSocketAddress;
 
 public class TCPForWardContext implements VComponent {
+
+    private Mapping mapping;
 
     private String forwardHost;
 
@@ -23,9 +26,10 @@ public class TCPForWardContext implements VComponent {
 
     private EventLoopGroup eventLoopGroup = NettyComponentConfig.getNioEventLoopGroup();
 
-    public TCPForWardContext(String forwardHost, int forwardPort, ByteReadHandler byteReadHandler) {
-        this.forwardPort = forwardPort;
-        this.forwardHost = forwardHost;
+    public TCPForWardContext(Mapping mapping, ByteReadHandler byteReadHandler) {
+        this.mapping = mapping;
+        this.forwardHost = mapping.getForwardHost();
+        this.forwardPort = mapping.getForwardPort();
         this.byteReadHandler = byteReadHandler;
     }
 
@@ -33,7 +37,7 @@ public class TCPForWardContext implements VComponent {
     public void start() {
         Bootstrap b = new Bootstrap();
 
-        forwardByteReadHandler = new ByteReadHandler(false);
+        forwardByteReadHandler = new ByteReadHandler(ByteReadHandler.REMOTE_TAG + forwardHost + ":" + forwardPort, mapping.getPrintResponse());
 
         //两互绑
         forwardByteReadHandler.setTarget(byteReadHandler);
