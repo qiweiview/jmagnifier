@@ -7,6 +7,8 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.function.Consumer;
+
 
 @Slf4j
 public class ByteReadHandler extends ChannelInboundHandlerAdapter implements DataSwap {
@@ -14,7 +16,6 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
     public static final String LOCAL_TAG = "[local]";
 
     public static final String REMOTE_TAG = "[remote]";
-
 
     public static final String NAME = "BYTE_READER";
 
@@ -24,15 +25,14 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
 
     private DataSwap dataSwap;
 
-    private Boolean consolePrint;
-
+    private Consumer<byte[]> consumer;
 
 
     private volatile boolean close = false;
 
 
-    public ByteReadHandler(String printPrefix, Boolean consolePrint) {
-        this.consolePrint = consolePrint;
+    public ByteReadHandler(String printPrefix, Consumer<byte[]> consumer) {
+        this.consumer = consumer;
         this.printPrefix = printPrefix;
 
     }
@@ -51,32 +51,13 @@ public class ByteReadHandler extends ChannelInboundHandlerAdapter implements Dat
         byteBuf.release();
 
         //处理数据
-        handleData(bytes);
+        if (consumer != null) {
+            consumer.accept(bytes);
+        }
 
         //发送数据
         sendData(bytes);
     }
-
-    public void handleData(byte[] bytes) {
-        if (bytes == null) {
-            log.warn(printPrefix + "数据为空");
-            return;
-        }
-
-        if (consolePrint != null && consolePrint) {
-            log.info(printPrefix + ":\n{}", new String(bytes));
-        } else {
-            if (printPrefix.contains(LOCAL_TAG)) {
-                log.warn("收到请求，但未配置打印，修改配置中的printRequest为true");
-            }
-
-            if (printPrefix.contains(REMOTE_TAG)) {
-                log.warn("收到响应，但未配置打印，修改配置中的printResponse为true");
-            }
-        }
-
-    }
-
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {

@@ -80,13 +80,12 @@ public class AppStart {
             Integer forwardPort = Integer.valueOf(forwardPortString);
 
             globalConfig = new GlobalConfig();
-            Mapping mapping = new Mapping();
-            mapping.setName("自定义映射");
+            Mapping mapping = Mapping.createDefaultMapping();
             mapping.setListenPort(listenPort);
             mapping.setForwardHost(forwardHost);
             mapping.setForwardPort(forwardPort);
-            mapping.setPrintRequest(true);
-            mapping.setPrintResponse(true);
+
+
             globalConfig.setMappings(Arrays.asList(mapping));
         } else if (args.length == 1) {
             String configFile = args[0];
@@ -137,13 +136,10 @@ public class AppStart {
             Integer forwardPort = Integer.valueOf(forwardPortString);
 
             GlobalConfig globalConfig = new GlobalConfig();
-            Mapping mapping = new Mapping();
-            mapping.setName("自定义映射");
+            Mapping mapping = Mapping.createDefaultMapping();
             mapping.setListenPort(listenPort);
             mapping.setForwardHost(forwardHost);
             mapping.setForwardPort(forwardPort);
-            mapping.setPrintRequest(true);
-            mapping.setPrintResponse(true);
             globalConfig.setMappings(Arrays.asList(mapping));
             return globalConfig;
         } catch (NumberFormatException e) {
@@ -163,7 +159,7 @@ public class AppStart {
         try {
             return ymlParser.parseFile(file, GlobalConfig.class);
         } catch (Exception e) {
-            throw new RuntimeException("解析配置文件失败:" + configFile);
+            throw new RuntimeException("解析配置文件失败:" + configFile + ":" + e.getMessage());
         }
     }
 

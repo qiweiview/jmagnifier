@@ -18,6 +18,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 
+@Deprecated
 @Slf4j
 @Data
 public class LiteHttpProxy {
