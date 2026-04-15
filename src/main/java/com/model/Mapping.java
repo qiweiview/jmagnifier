@@ -39,6 +39,36 @@ public class Mapping {
         return mapping;
     }
 
+    public void applyDefaults() {
+        Mapping defaultMapping = createDefaultMapping();
+        if (enable == null) {
+            enable = defaultMapping.getEnable();
+        }
+        if (name == null || name.trim().length() == 0) {
+            name = defaultMapping.getName();
+        }
+        if (console == null) {
+            console = defaultMapping.getConsole();
+        } else {
+            if (console.getPrintRequest() == null) {
+                console.setPrintRequest(defaultMapping.getConsole().getPrintRequest());
+            }
+            if (console.getPrintResponse() == null) {
+                console.setPrintResponse(defaultMapping.getConsole().getPrintResponse());
+            }
+        }
+        if (dump == null) {
+            dump = defaultMapping.getDump();
+        } else {
+            if (dump.getEnable() == null) {
+                dump.setEnable(defaultMapping.getDump().getEnable());
+            }
+            if (dump.getDumpPath() == null || dump.getDumpPath().trim().length() == 0) {
+                dump.setDumpPath(defaultMapping.getDump().getDumpPath());
+            }
+        }
+    }
+
     public String format() {
         return String.format("%s_listen:%d_forward:%s:%d", name, listenPort, forwardHost, forwardPort);
     }

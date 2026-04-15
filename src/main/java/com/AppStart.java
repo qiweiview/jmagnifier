@@ -2,9 +2,9 @@ package com;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
-import com.core.DataReceiver;
 import com.model.GlobalConfig;
 import com.model.Mapping;
+import com.runtime.AppRuntime;
 import com.util.ApplicationExit;
 import com.util.YmlParser;
 import lombok.extern.slf4j.Slf4j;
@@ -23,8 +23,13 @@ import static org.slf4j.Logger.ROOT_LOGGER_NAME;
 public class AppStart {
     public static final YmlParser ymlParser = new YmlParser();
 
+    private static volatile AppRuntime appRuntime;
+
     public static void main(String[] args) {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (appRuntime != null) {
+                appRuntime.shutdown();
+            }
             log.info("Good night everyone ");
         }));
 
@@ -95,7 +100,7 @@ public class AppStart {
             } else {
                 throw new RuntimeException("不支持的配置文件格式");
             }
-        } else if (args.length > 3) {
+        } else if (args.length >= 3) {
             //todo 命令行模式
             globalConfig = paramMode(args);
         } else {
@@ -108,7 +113,7 @@ public class AppStart {
         printMapping(globalConfig.getMappings());
 
         //启动映射服务
-        startMappingServer(GlobalConfig.DEFAULT_INSTANT.getMappings());
+        startMappingServer(GlobalConfig.DEFAULT_INSTANT);
 
     }
 
@@ -166,14 +171,11 @@ public class AppStart {
     /**
      * 启动映射服务
      *
-     * @param mappingList
+     * @param globalConfig
      */
-    private static void startMappingServer(List<Mapping> mappingList) {
-        //循环启动
-        mappingList.forEach(x -> {
-            DataReceiver dataReceiver = new DataReceiver(x);
-            dataReceiver.start();
-        });
+    private static void startMappingServer(GlobalConfig globalConfig) {
+        appRuntime = new AppRuntime(globalConfig);
+        appRuntime.start();
     }
 
     /**

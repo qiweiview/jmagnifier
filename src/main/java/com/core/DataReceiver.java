@@ -4,10 +4,7 @@ import com.model.DumpConfig;
 import com.model.Mapping;
 import com.util.NettyComponentConfig;
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelPipeline;
-import io.netty.channel.EventLoopGroup;
+import io.netty.channel.*;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
@@ -15,6 +12,11 @@ import org.apache.commons.io.FileUtils;
 import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 public class DataReceiver implements VComponent {
@@ -25,7 +27,21 @@ public class DataReceiver implements VComponent {
 
     private ServerBootstrap serverBootstrap;
 
-    private EventLoopGroup eventLoopGroup = NettyComponentConfig.getNioEventLoopGroup();
+    private EventLoopGroup bossGroup = NettyComponentConfig.getNioEventLoopGroup();
+
+    private EventLoopGroup workerGroup = NettyComponentConfig.getNioEventLoopGroup();
+
+    private EventLoopGroup clientGroup = NettyComponentConfig.getNioEventLoopGroup();
+
+    private boolean ownEventLoopGroups = true;
+
+    private Channel serverChannel;
+
+    private ChannelFuture bindFuture;
+
+    private final AtomicBoolean running = new AtomicBoolean(false);
+
+    private final Set<ConnectionContext> activeConnections = Collections.newSetFromMap(new ConcurrentHashMap<ConnectionContext, Boolean>());
 
 
     public DataReceiver(Mapping mapping) {
@@ -33,14 +49,27 @@ public class DataReceiver implements VComponent {
         this.mapping = mapping;
     }
 
+    public DataReceiver(Mapping mapping, EventLoopGroup bossGroup, EventLoopGroup workerGroup, EventLoopGroup clientGroup) {
+        this(mapping);
+        this.bossGroup = bossGroup;
+        this.workerGroup = workerGroup;
+        this.clientGroup = clientGroup;
+        this.ownEventLoopGroups = false;
+    }
+
     @Override
-    public void start() {
+    public synchronized void start() {
+        if (running.get()) {
+            return;
+        }
         String printPrefix = ByteReadHandler.LOCAL_TAG + "127.0.0.1:" + listenPort;
 
         //create  Initializer
         ChannelInitializer<Channel> channelInitializer = new ChannelInitializer<Channel>() {
             @Override
             protected void initChannel(Channel channel) throws Exception {
+                ConnectionContext connectionContext = new ConnectionContext(mapping, channel);
+                activeConnections.add(connectionContext);
 
 
                 ByteReadHandler byteReadHandler = new ByteReadHandler(printPrefix, (bytes) -> {
@@ -51,7 +80,7 @@ public class DataReceiver implements VComponent {
 
                     //打印部分逻辑
                     Boolean printRequest = mapping.getConsole().getPrintRequest();
-                    if (printRequest) {
+                    if (Boolean.TRUE.equals(printRequest)) {
                         log.info(printPrefix + ":\n{}", new String(bytes));
                     } else {
                         log.warn("收到请求，但未配置打印，修改配置中的printRequest为true");
@@ -60,7 +89,7 @@ public class DataReceiver implements VComponent {
 
                     //dump部分逻辑
                     DumpConfig dumpConfig = mapping.getDump();
-                    if (dumpConfig.getEnable()) {
+                    if (Boolean.TRUE.equals(dumpConfig.getEnable())) {
                         String dumpPath = dumpConfig.getDumpPath();
 
                         String file = dumpPath + File.separator + mapping.dumpName();
@@ -76,32 +105,86 @@ public class DataReceiver implements VComponent {
                 pipeline.addLast(ByteReadHandler.NAME, byteReadHandler);
 
                 //连接器
-                TCPForWardContext forWardContext = new TCPForWardContext(mapping, byteReadHandler);
+                TCPForWardContext forWardContext = new TCPForWardContext(mapping, byteReadHandler, clientGroup,
+                        () -> closeConnection(connectionContext, "REMOTE_CLOSED"));
+                connectionContext.setForwardContext(forWardContext);
+                channel.closeFuture().addListener(x -> closeConnection(connectionContext, "LOCAL_CLOSED"));
                 forWardContext.start();
 
             }
         };
 
         serverBootstrap = new ServerBootstrap();
-        serverBootstrap.group(eventLoopGroup)
+        serverBootstrap.group(bossGroup, workerGroup)
                 .channel(NioServerSocketChannel.class)//
                 .localAddress(new InetSocketAddress(listenPort))//　
                 .childHandler(channelInitializer);
 
         try {
-            serverBootstrap.bind().sync();
+            bindFuture = serverBootstrap.bind().sync();
+            serverChannel = bindFuture.channel();
+            running.set(serverChannel != null && serverChannel.isActive());
         } catch (Exception e) {
             log.error("bind server port:" + listenPort + " fail cause:" + e);
+            throw new RuntimeException("bind server port:" + listenPort + " fail", e);
         }
 
     }
 
+    public synchronized void stop() {
+        if (!running.compareAndSet(true, false)) {
+            return;
+        }
+        if (serverChannel != null && serverChannel.isOpen()) {
+            serverChannel.close().syncUninterruptibly();
+        }
+        for (ConnectionContext connectionContext : new ArrayList<>(activeConnections)) {
+            closeConnection(connectionContext, "MAPPING_STOPPED");
+        }
+        serverChannel = null;
+        bindFuture = null;
+    }
+
+    public boolean isRunning() {
+        return running.get();
+    }
+
+    public int getBoundPort() {
+        if (serverChannel != null && serverChannel.localAddress() instanceof InetSocketAddress) {
+            return ((InetSocketAddress) serverChannel.localAddress()).getPort();
+        }
+        return listenPort;
+    }
+
+    public int getActiveConnectionCount() {
+        return activeConnections.size();
+    }
+
+    private void closeConnection(ConnectionContext connectionContext, String reason) {
+        if (connectionContext == null) {
+            return;
+        }
+        connectionContext.close(reason);
+        activeConnections.remove(connectionContext);
+    }
+
     @Override
     public void release() {
-        if (eventLoopGroup != null) {
-            eventLoopGroup.shutdownGracefully();
+        stop();
+        if (ownEventLoopGroups) {
+            if (bossGroup != null) {
+                bossGroup.shutdownGracefully();
+            }
+            if (workerGroup != null) {
+                workerGroup.shutdownGracefully();
+            }
+            if (clientGroup != null) {
+                clientGroup.shutdownGracefully();
+            }
         }
-        eventLoopGroup = null;
+        bossGroup = null;
+        workerGroup = null;
+        clientGroup = null;
         serverBootstrap = null;
     }
 

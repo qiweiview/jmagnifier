@@ -23,7 +23,7 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>1.18.16</version>
+            <version>1.18.32</version>
             <scope>provided</scope>
         </dependency>
 
@@ -69,7 +69,7 @@
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
-            <version>RELEASE</version>
+            <version>4.13.2</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -99,8 +99,7 @@
             <resource>
                 <directory>src/main/resources</directory>
                 <includes>
-                    <include>**/*.css</include>
-                    <include>**/*.xml</include>
+                    <include>**/*</include>
                 </includes>
                 <filtering>false</filtering>
             </resource>

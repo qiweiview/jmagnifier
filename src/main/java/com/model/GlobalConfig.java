@@ -27,18 +27,27 @@ public class GlobalConfig {
         }
 
         mappings = mappings.stream().filter(x -> {
+            x.applyDefaults();
+            if (!Boolean.TRUE.equals(x.getEnable())) {
+                log.info("跳过未启用的映射策略:{}", x.format());
+                return false;
+            }
             int listenPort = x.getListenPort();
             int forwardPort = x.getForwardPort();
-            if (listenPort < 0 || listenPort > 65536 || forwardPort < 0 || forwardPort > 65536) {
+            if (listenPort < 0 || listenPort > 65535 || forwardPort < 0 || forwardPort > 65535) {
                 log.warn("过滤策略{}-->{}:{}", x.getListenPort(), x.getForwardHost(), x.getForwardPort());
                 return false;
             }
             return true;
         }).collect(Collectors.toList());
+
+        if (mappings.size() == 0) {
+            log.error("没有可启动的映射策略");
+            ApplicationExit.exit();
+        }
     }
 
 
 }
-
 
 
