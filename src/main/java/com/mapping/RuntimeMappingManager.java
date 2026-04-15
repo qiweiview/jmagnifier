@@ -3,6 +3,9 @@ package com.mapping;
 import com.core.DataReceiver;
 import com.model.Mapping;
 import com.runtime.NettyGroups;
+import com.store.ConnectionRepository;
+import com.store.MappingEntity;
+import com.store.MappingRepository;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Instant;
@@ -18,6 +21,10 @@ public class RuntimeMappingManager {
 
     private final NettyGroups nettyGroups;
 
+    private final MappingRepository mappingRepository;
+
+    private final ConnectionRepository connectionRepository;
+
     private final AtomicLong mappingIdGenerator = new AtomicLong(1);
 
     private final Map<Long, MappingRuntime> runtimes = new ConcurrentHashMap<>();
@@ -25,7 +32,13 @@ public class RuntimeMappingManager {
     private final Object mappingMutationLock = new Object();
 
     public RuntimeMappingManager(NettyGroups nettyGroups) {
+        this(nettyGroups, null, null);
+    }
+
+    public RuntimeMappingManager(NettyGroups nettyGroups, MappingRepository mappingRepository, ConnectionRepository connectionRepository) {
         this.nettyGroups = nettyGroups;
+        this.mappingRepository = mappingRepository;
+        this.connectionRepository = connectionRepository;
     }
 
     public List<MappingRuntime> startAll(List<Mapping> mappings) {
@@ -39,10 +52,28 @@ public class RuntimeMappingManager {
         return started;
     }
 
+    public List<MappingRuntime> restoreAll(List<MappingEntity> mappings) {
+        if (mappings == null || mappings.size() == 0) {
+            return Collections.emptyList();
+        }
+        List<MappingRuntime> started = new ArrayList<>();
+        for (MappingEntity mappingEntity : mappings) {
+            started.add(startExistingMapping(mappingEntity.getId(), mappingEntity.toMapping()));
+        }
+        return started;
+    }
+
     public MappingRuntime startMapping(Mapping mapping) {
         synchronized (mappingMutationLock) {
             validateMapping(mapping, null);
-            long mappingId = mappingIdGenerator.getAndIncrement();
+            long mappingId = mappingRepository == null ? mappingIdGenerator.getAndIncrement() : mappingRepository.insert(mapping);
+            return startExistingMapping(mappingId, mapping);
+        }
+    }
+
+    public MappingRuntime startExistingMapping(long mappingId, Mapping mapping) {
+        synchronized (mappingMutationLock) {
+            validateMapping(mapping, mappingId);
             MappingRuntime runtime = new MappingRuntime(mappingId, mapping);
             runtimes.put(mappingId, runtime);
             startRuntime(runtime);
@@ -63,6 +94,9 @@ public class RuntimeMappingManager {
             validateMapping(newMapping, mappingId);
             boolean wasRunning = runtime.getStatus() == MappingStatus.RUNNING;
             stopRuntime(runtime);
+            if (mappingRepository != null) {
+                mappingRepository.update(mappingId, newMapping);
+            }
             runtime.setMappingSnapshot(newMapping);
             runtime.setLastError(null);
             if (wasRunning && Boolean.TRUE.equals(newMapping.getEnable())) {
@@ -78,6 +112,9 @@ public class RuntimeMappingManager {
         synchronized (mappingMutationLock) {
             MappingRuntime runtime = getRequiredRuntime(mappingId);
             stopRuntime(runtime);
+            if (mappingRepository != null) {
+                mappingRepository.softDelete(mappingId);
+            }
             runtimes.remove(mappingId);
         }
     }
@@ -104,10 +141,11 @@ public class RuntimeMappingManager {
         }
         runtime.setStatus(MappingStatus.STARTING);
         runtime.setLastError(null);
-        DataReceiver dataReceiver = new DataReceiver(mapping,
+        DataReceiver dataReceiver = new DataReceiver(runtime.getMappingId(), mapping,
                 nettyGroups.getTcpBossGroup(),
                 nettyGroups.getTcpWorkerGroup(),
-                nettyGroups.getTcpClientGroup());
+                nettyGroups.getTcpClientGroup(),
+                connectionRepository);
         runtime.setDataReceiver(dataReceiver);
         try {
             dataReceiver.start();

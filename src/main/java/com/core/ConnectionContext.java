@@ -15,6 +15,8 @@ public class ConnectionContext {
 
     private final long connectionId;
 
+    private final long mappingId;
+
     private final Mapping mappingSnapshot;
 
     private final Channel localChannel;
@@ -33,8 +35,13 @@ public class ConnectionContext {
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    public ConnectionContext(Mapping mappingSnapshot, Channel localChannel) {
-        this.connectionId = ID_GENERATOR.getAndIncrement();
+    public ConnectionContext(long mappingId, Mapping mappingSnapshot, Channel localChannel) {
+        this(mappingId, ID_GENERATOR.getAndIncrement(), mappingSnapshot, localChannel);
+    }
+
+    public ConnectionContext(long mappingId, long connectionId, Mapping mappingSnapshot, Channel localChannel) {
+        this.mappingId = mappingId;
+        this.connectionId = connectionId;
         this.mappingSnapshot = mappingSnapshot;
         this.localChannel = localChannel;
         this.openedAt = Instant.now();
@@ -51,6 +58,10 @@ public class ConnectionContext {
 
     public long getConnectionId() {
         return connectionId;
+    }
+
+    public long getMappingId() {
+        return mappingId;
     }
 
     public Mapping getMappingSnapshot() {
@@ -89,9 +100,9 @@ public class ConnectionContext {
         this.forwardContext = forwardContext;
     }
 
-    public void close(String reason) {
+    public boolean close(String reason) {
         if (!closed.compareAndSet(false, true)) {
-            return;
+            return false;
         }
         this.closeReason = reason;
         this.closedAt = Instant.now();
@@ -102,5 +113,6 @@ public class ConnectionContext {
         if (localChannel != null && localChannel.isOpen()) {
             localChannel.close();
         }
+        return true;
     }
 }

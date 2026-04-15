@@ -14,6 +14,8 @@ public class GlobalConfig {
 
     public static GlobalConfig DEFAULT_INSTANT;
 
+    private StoreConfig store = new StoreConfig();
+
     private List<Mapping> mappings;
 
 
@@ -29,8 +31,7 @@ public class GlobalConfig {
         mappings = mappings.stream().filter(x -> {
             x.applyDefaults();
             if (!Boolean.TRUE.equals(x.getEnable())) {
-                log.info("跳过未启用的映射策略:{}", x.format());
-                return false;
+                log.info("映射策略未启用，启动时不会监听:{}", x.format());
             }
             int listenPort = x.getListenPort();
             int forwardPort = x.getForwardPort();
@@ -45,9 +46,11 @@ public class GlobalConfig {
             log.error("没有可启动的映射策略");
             ApplicationExit.exit();
         }
+        if (store == null) {
+            store = new StoreConfig();
+        }
     }
 
 
 }
-
 

@@ -13,6 +13,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 @Slf4j
 public class TCPForWardContext implements VComponent {
@@ -33,7 +34,7 @@ public class TCPForWardContext implements VComponent {
 
     private boolean ownEventLoopGroup = true;
 
-    private Runnable closeCallback;
+    private Consumer<String> closeCallback;
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -44,7 +45,7 @@ public class TCPForWardContext implements VComponent {
         this.byteReadHandler = byteReadHandler;
     }
 
-    public TCPForWardContext(Mapping mapping, ByteReadHandler byteReadHandler, EventLoopGroup eventLoopGroup, Runnable closeCallback) {
+    public TCPForWardContext(Mapping mapping, ByteReadHandler byteReadHandler, EventLoopGroup eventLoopGroup, Consumer<String> closeCallback) {
         this(mapping, byteReadHandler);
         this.eventLoopGroup = eventLoopGroup;
         this.ownEventLoopGroup = false;
@@ -105,20 +106,20 @@ public class TCPForWardContext implements VComponent {
             connect.sync();
             if (!connect.isSuccess()) {
                 log.error("connect to {} fail cause:{}", inetSocketAddress, connect.cause() == null ? "unknown" : connect.cause().getMessage());
-                close();
+                closeWithReason("ERROR");
                 return;
             }
             remoteChannel = connect.channel();
             forwardByteReadHandler.setTarget(byteReadHandler);
             byteReadHandler.setTarget(forwardByteReadHandler);
-            remoteChannel.closeFuture().addListener(x -> close());
+            remoteChannel.closeFuture().addListener(x -> closeWithReason("REMOTE_CLOSED"));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("connect to {} interrupted", inetSocketAddress, e);
-            close();
+            closeWithReason("ERROR");
         } catch (Exception e) {
             log.error("connect to {} fail", inetSocketAddress, e);
-            close();
+            closeWithReason("ERROR");
         }
     }
 
@@ -126,7 +127,15 @@ public class TCPForWardContext implements VComponent {
         return remoteChannel != null && remoteChannel.isActive() && !closed.get();
     }
 
+    public Channel getRemoteChannel() {
+        return remoteChannel;
+    }
+
     public void close() {
+        closeWithReason("REMOTE_CLOSED");
+    }
+
+    public void closeWithReason(String reason) {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
@@ -140,7 +149,7 @@ public class TCPForWardContext implements VComponent {
             remoteChannel.close();
         }
         if (closeCallback != null) {
-            closeCallback.run();
+            closeCallback.accept(reason);
         }
     }
 

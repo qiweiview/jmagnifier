@@ -2,6 +2,7 @@ package com.core;
 
 import com.model.DumpConfig;
 import com.model.Mapping;
+import com.store.ConnectionRepository;
 import com.util.NettyComponentConfig;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
@@ -23,6 +24,8 @@ public class DataReceiver implements VComponent {
 
     private Mapping mapping;
 
+    private long mappingId = -1;
+
     private int listenPort;
 
     private ServerBootstrap serverBootstrap;
@@ -43,17 +46,21 @@ public class DataReceiver implements VComponent {
 
     private final Set<ConnectionContext> activeConnections = Collections.newSetFromMap(new ConcurrentHashMap<ConnectionContext, Boolean>());
 
+    private ConnectionRepository connectionRepository;
+
 
     public DataReceiver(Mapping mapping) {
         this.listenPort = mapping.getListenPort();
         this.mapping = mapping;
     }
 
-    public DataReceiver(Mapping mapping, EventLoopGroup bossGroup, EventLoopGroup workerGroup, EventLoopGroup clientGroup) {
+    public DataReceiver(long mappingId, Mapping mapping, EventLoopGroup bossGroup, EventLoopGroup workerGroup, EventLoopGroup clientGroup, ConnectionRepository connectionRepository) {
         this(mapping);
+        this.mappingId = mappingId;
         this.bossGroup = bossGroup;
         this.workerGroup = workerGroup;
         this.clientGroup = clientGroup;
+        this.connectionRepository = connectionRepository;
         this.ownEventLoopGroups = false;
     }
 
@@ -68,7 +75,12 @@ public class DataReceiver implements VComponent {
         ChannelInitializer<Channel> channelInitializer = new ChannelInitializer<Channel>() {
             @Override
             protected void initChannel(Channel channel) throws Exception {
-                ConnectionContext connectionContext = new ConnectionContext(mapping, channel);
+                long connectionId = connectionRepository == null
+                        ? -1
+                        : connectionRepository.openConnection(mappingId, mapping, channel);
+                ConnectionContext connectionContext = connectionId > 0
+                        ? new ConnectionContext(mappingId, connectionId, mapping, channel)
+                        : new ConnectionContext(mappingId, mapping, channel);
                 activeConnections.add(connectionContext);
 
 
@@ -106,10 +118,13 @@ public class DataReceiver implements VComponent {
 
                 //连接器
                 TCPForWardContext forWardContext = new TCPForWardContext(mapping, byteReadHandler, clientGroup,
-                        () -> closeConnection(connectionContext, "REMOTE_CLOSED"));
+                        reason -> closeConnection(connectionContext, reason));
                 connectionContext.setForwardContext(forWardContext);
                 channel.closeFuture().addListener(x -> closeConnection(connectionContext, "LOCAL_CLOSED"));
                 forWardContext.start();
+                if (connectionRepository != null && forWardContext.isConnected()) {
+                    connectionRepository.markOpen(connectionContext.getConnectionId(), forWardContext.getRemoteChannel());
+                }
 
             }
         };
@@ -164,8 +179,14 @@ public class DataReceiver implements VComponent {
         if (connectionContext == null) {
             return;
         }
-        connectionContext.close(reason);
-        activeConnections.remove(connectionContext);
+        boolean changed = connectionContext.close(reason);
+        if (changed) {
+            activeConnections.remove(connectionContext);
+            if (connectionRepository != null && connectionContext.getConnectionId() > 0) {
+                String status = "ERROR".equals(reason) ? "FAILED" : "CLOSED";
+                connectionRepository.closeConnection(connectionContext.getConnectionId(), status, reason, null);
+            }
+        }
     }
 
     @Override
