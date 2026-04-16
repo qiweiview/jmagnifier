@@ -200,9 +200,10 @@ public class RuntimeMappingManager {
             log.info("mapping {} started on port {}", mapping.getName(), dataReceiver.getBoundPort());
         } catch (Exception e) {
             runtime.setStatus(MappingStatus.FAILED);
-            runtime.setLastError(e.getMessage());
+            String message = "bind listen port failed: " + mapping.getListenPort();
+            runtime.setLastError(message);
             log.error("mapping {} start failed", mapping.getName(), e);
-            throw e;
+            throw new MappingOperationException("BIND_FAILED", message, e);
         }
     }
 
@@ -229,22 +230,22 @@ public class RuntimeMappingManager {
     private MappingRuntime getRequiredRuntime(long mappingId) {
         MappingRuntime runtime = runtimes.get(mappingId);
         if (runtime == null) {
-            throw new RuntimeException("mapping not found: " + mappingId);
+            throw new MappingOperationException("MAPPING_NOT_FOUND", "mapping not found: " + mappingId);
         }
         return runtime;
     }
 
     private void validateMapping(Mapping mapping, Long currentMappingId) {
         if (mapping == null) {
-            throw new RuntimeException("mapping is null");
+            throw new MappingOperationException("BAD_REQUEST", "mapping is null");
         }
         mapping.applyDefaults();
         if (mapping.getListenPort() < 0 || mapping.getListenPort() > 65535
                 || mapping.getForwardPort() < 0 || mapping.getForwardPort() > 65535) {
-            throw new RuntimeException("invalid port");
+            throw new MappingOperationException("INVALID_PORT", "listenPort and forwardPort must be between 0 and 65535");
         }
         if (mapping.getForwardHost() == null || mapping.getForwardHost().trim().length() == 0) {
-            throw new RuntimeException("forward host is empty");
+            throw new MappingOperationException("INVALID_FORWARD_HOST", "forwardHost is required");
         }
         if (!Boolean.TRUE.equals(mapping.getEnable())) {
             return;
@@ -255,7 +256,8 @@ public class RuntimeMappingManager {
             }
             if (runtime.getStatus() == MappingStatus.RUNNING
                     && runtime.getMappingSnapshot().getListenPort() == mapping.getListenPort()) {
-                throw new RuntimeException("listen port already configured: " + mapping.getListenPort());
+                throw new MappingOperationException("PORT_ALREADY_CONFIGURED",
+                        "listen port already configured: " + mapping.getListenPort());
             }
         }
     }

@@ -4,6 +4,7 @@ import com.capture.PacketCaptureService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mapping.MappingRuntime;
+import com.mapping.MappingOperationException;
 import com.mapping.MappingStatus;
 import com.mapping.RuntimeMappingManager;
 import com.model.AdminConfig;
@@ -97,11 +98,56 @@ public class NettyAdminServer {
 
         private final ObjectMapper objectMapper = new ObjectMapper();
 
+        private final AdminRouter publicRouter = new AdminRouter();
+
+        private final AdminRouter authenticatedRouter = new AdminRouter();
+
+        private AdminHandler() {
+            publicRouter.add(HttpMethod.GET, "/login", (request, params) ->
+                    JsonResponse.text(HttpResponseStatus.OK, "<!doctype html><title>jmagnifier login</title>", "text/html"));
+            publicRouter.add(HttpMethod.POST, "/api/login", (request, params) -> login(request));
+
+            authenticatedRouter.add(HttpMethod.POST, "/api/logout", (request, params) -> logout(request));
+            authenticatedRouter.add(HttpMethod.GET, "/api/me", (request, params) -> me());
+            authenticatedRouter.add(HttpMethod.GET, "/api/runtime", (request, params) -> JsonResponse.success(runtimeSummary()));
+            authenticatedRouter.add(HttpMethod.GET, "/api/mappings", (request, params) -> JsonResponse.success(mappingList()));
+            authenticatedRouter.add(HttpMethod.POST, "/api/mappings", (request, params) ->
+                    JsonResponse.success(toMappingResponse(mappingManager.startMapping(readMapping(request)))));
+            authenticatedRouter.add(HttpMethod.PUT, "/api/mappings/{id}", (request, params) ->
+                    JsonResponse.success(toMappingResponse(mappingManager.updateMapping(requiredId(params, "id"), readMapping(request)))));
+            authenticatedRouter.add(HttpMethod.POST, "/api/mappings/{id}/start", (request, params) ->
+                    JsonResponse.success(toMappingResponse(mappingManager.startMapping(requiredId(params, "id")))));
+            authenticatedRouter.add(HttpMethod.POST, "/api/mappings/{id}/stop", (request, params) -> {
+                mappingManager.stopMapping(requiredId(params, "id"));
+                return JsonResponse.success();
+            });
+            authenticatedRouter.add(HttpMethod.DELETE, "/api/mappings/{id}", (request, params) -> {
+                mappingManager.deleteMapping(requiredId(params, "id"));
+                return JsonResponse.success();
+            });
+            authenticatedRouter.add(HttpMethod.GET, "/api/connections", (request, params) ->
+                    JsonResponse.success(connectionPage(readConnectionQuery(new QueryStringDecoder(request.uri())))));
+            authenticatedRouter.add(HttpMethod.GET, "/api/connections/{id}", (request, params) ->
+                    connectionDetail(requiredId(params, "id")));
+            authenticatedRouter.add(HttpMethod.GET, "/api/packets", (request, params) ->
+                    JsonResponse.success(packetPage(readPacketQuery(new QueryStringDecoder(request.uri())))));
+            authenticatedRouter.add(HttpMethod.GET, "/api/packets/{id}", (request, params) ->
+                    packetDetail(requiredId(params, "id")));
+            authenticatedRouter.add(HttpMethod.GET, "/api/packets/{id}/payload", (request, params) ->
+                    packetPayload(requiredId(params, "id")));
+            authenticatedRouter.add(HttpMethod.GET, "/", (request, params) ->
+                    JsonResponse.text(HttpResponseStatus.OK, "jmagnifier admin API", "text/plain"));
+        }
+
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) {
             FullHttpResponse response;
             try {
                 response = route(request);
+            } catch (AdminApiException e) {
+                response = JsonResponse.error(e.getStatus(), e.getCode(), e.getMessage());
+            } catch (MappingOperationException e) {
+                response = JsonResponse.error(statusForMappingError(e.getCode()), e.getCode(), e.getMessage());
             } catch (IllegalArgumentException e) {
                 response = JsonResponse.error(HttpResponseStatus.BAD_REQUEST, "BAD_REQUEST", e.getMessage());
             } catch (RuntimeException e) {
@@ -113,20 +159,16 @@ public class NettyAdminServer {
         private FullHttpResponse route(FullHttpRequest request) {
             QueryStringDecoder decoder = new QueryStringDecoder(request.uri());
             String path = decoder.path();
-            HttpMethod method = request.method();
-
-            if (HttpMethod.GET.equals(method) && "/login".equals(path)) {
-                return JsonResponse.text(HttpResponseStatus.OK, "<!doctype html><title>jmagnifier login</title>", "text/html");
-            }
-            if (HttpMethod.POST.equals(method) && "/api/login".equals(path)) {
-                return login(request);
+            FullHttpResponse publicResponse = publicRouter.route(request);
+            if (publicResponse != null) {
+                return publicResponse;
             }
 
             String sessionId = sessionId(request);
             boolean authenticated = sessionManager.isValid(sessionId);
             if (!authenticated) {
                 if (path.startsWith("/api/")) {
-                    return JsonResponse.error(HttpResponseStatus.UNAUTHORIZED, "UNAUTHORIZED", "login required");
+                    throw new AdminApiException(HttpResponseStatus.UNAUTHORIZED, "UNAUTHORIZED", "login required");
                 }
                 FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FOUND);
                 response.headers().set(HttpHeaderNames.LOCATION, "/login");
@@ -134,76 +176,9 @@ public class NettyAdminServer {
                 return response;
             }
 
-            if (HttpMethod.POST.equals(method) && "/api/logout".equals(path)) {
-                sessionManager.remove(sessionId);
-                FullHttpResponse response = JsonResponse.success();
-                DefaultCookie cookie = new DefaultCookie(AdminSessionManager.COOKIE_NAME, "");
-                cookie.setPath("/");
-                cookie.setMaxAge(0);
-                cookie.setHttpOnly(true);
-                response.headers().add(HttpHeaderNames.SET_COOKIE, ServerCookieEncoder.STRICT.encode(cookie));
+            FullHttpResponse response = authenticatedRouter.route(request);
+            if (response != null) {
                 return response;
-            }
-            if (HttpMethod.GET.equals(method) && "/api/me".equals(path)) {
-                Map<String, Object> data = new HashMap<>();
-                data.put("authenticated", true);
-                return JsonResponse.success(data);
-            }
-            if (HttpMethod.GET.equals(method) && "/api/runtime".equals(path)) {
-                return JsonResponse.success(runtimeSummary());
-            }
-            if (HttpMethod.GET.equals(method) && "/api/mappings".equals(path)) {
-                return JsonResponse.success(mappingList());
-            }
-            if (HttpMethod.POST.equals(method) && "/api/mappings".equals(path)) {
-                MappingRuntime runtime = mappingManager.startMapping(readMapping(request));
-                return JsonResponse.success(toMappingResponse(runtime));
-            }
-            if (HttpMethod.GET.equals(method) && "/api/connections".equals(path)) {
-                return JsonResponse.success(connectionPage(readConnectionQuery(decoder)));
-            }
-
-            Long connectionId = singleId(path, "/api/connections/");
-            if (connectionId != null && HttpMethod.GET.equals(method)) {
-                return connectionDetail(connectionId);
-            }
-
-            if (HttpMethod.GET.equals(method) && "/api/packets".equals(path)) {
-                return JsonResponse.success(packetPage(readPacketQuery(decoder)));
-            }
-
-            Long packetPayloadId = nestedId(path, "/api/packets/", "/payload");
-            if (packetPayloadId != null && HttpMethod.GET.equals(method)) {
-                return packetPayload(packetPayloadId);
-            }
-
-            Long packetId = singleId(path, "/api/packets/");
-            if (packetId != null && HttpMethod.GET.equals(method)) {
-                return packetDetail(packetId);
-            }
-
-            Long mappingId = mappingId(path, "/api/mappings/");
-            if (mappingId != null) {
-                if (HttpMethod.PUT.equals(method) && path.equals("/api/mappings/" + mappingId)) {
-                    MappingRuntime runtime = mappingManager.updateMapping(mappingId, readMapping(request));
-                    return JsonResponse.success(toMappingResponse(runtime));
-                }
-                if (HttpMethod.POST.equals(method) && path.equals("/api/mappings/" + mappingId + "/start")) {
-                    MappingRuntime runtime = mappingManager.startMapping(mappingId);
-                    return JsonResponse.success(toMappingResponse(runtime));
-                }
-                if (HttpMethod.POST.equals(method) && path.equals("/api/mappings/" + mappingId + "/stop")) {
-                    mappingManager.stopMapping(mappingId);
-                    return JsonResponse.success();
-                }
-                if (HttpMethod.DELETE.equals(method) && path.equals("/api/mappings/" + mappingId)) {
-                    mappingManager.deleteMapping(mappingId);
-                    return JsonResponse.success();
-                }
-            }
-
-            if (HttpMethod.GET.equals(method) && "/".equals(path)) {
-                return JsonResponse.text(HttpResponseStatus.OK, "jmagnifier admin API", "text/plain");
             }
             return JsonResponse.error(HttpResponseStatus.NOT_FOUND, "NOT_FOUND", "route not found");
         }
@@ -227,6 +202,24 @@ public class NettyAdminServer {
             return response;
         }
 
+        private FullHttpResponse logout(FullHttpRequest request) {
+            String sessionId = sessionId(request);
+            sessionManager.remove(sessionId);
+            FullHttpResponse response = JsonResponse.success();
+            DefaultCookie cookie = new DefaultCookie(AdminSessionManager.COOKIE_NAME, "");
+            cookie.setPath("/");
+            cookie.setMaxAge(0);
+            cookie.setHttpOnly(true);
+            response.headers().add(HttpHeaderNames.SET_COOKIE, ServerCookieEncoder.STRICT.encode(cookie));
+            return response;
+        }
+
+        private FullHttpResponse me() {
+            Map<String, Object> data = new HashMap<>();
+            data.put("authenticated", true);
+            return JsonResponse.success(data);
+        }
+
         private Mapping readMapping(FullHttpRequest request) {
             Map<String, Object> body = readJsonMap(request);
             Mapping mapping = Mapping.createDefaultMapping();
@@ -244,6 +237,22 @@ public class NettyAdminServer {
             mapping.setForwardPort(intValue(body.get("forwardPort"), "forwardPort"));
             mapping.applyDefaults();
             return mapping;
+        }
+
+        private HttpResponseStatus statusForMappingError(String code) {
+            if ("MAPPING_NOT_FOUND".equals(code)) {
+                return HttpResponseStatus.NOT_FOUND;
+            }
+            if ("BIND_FAILED".equals(code)) {
+                return HttpResponseStatus.CONFLICT;
+            }
+            if ("PORT_ALREADY_CONFIGURED".equals(code)) {
+                return HttpResponseStatus.CONFLICT;
+            }
+            if ("INVALID_PORT".equals(code) || "INVALID_FORWARD_HOST".equals(code) || "BAD_REQUEST".equals(code)) {
+                return HttpResponseStatus.BAD_REQUEST;
+            }
+            return HttpResponseStatus.INTERNAL_SERVER_ERROR;
         }
 
         private Map<String, Object> readJsonMap(FullHttpRequest request) {
@@ -514,46 +523,12 @@ public class NettyAdminServer {
             return escaped.toString();
         }
 
-        private Long mappingId(String path, String prefix) {
-            if (!path.startsWith(prefix)) {
-                return null;
-            }
-            String rest = path.substring(prefix.length());
-            String idPart = rest.contains("/") ? rest.substring(0, rest.indexOf('/')) : rest;
+        private long requiredId(Map<String, String> params, String name) {
+            String value = params.get(name);
             try {
-                return Long.valueOf(idPart);
-            } catch (NumberFormatException e) {
-                return null;
-            }
-        }
-
-        private Long singleId(String path, String prefix) {
-            if (!path.startsWith(prefix)) {
-                return null;
-            }
-            String idPart = path.substring(prefix.length());
-            if (idPart.length() == 0 || idPart.contains("/")) {
-                return null;
-            }
-            return parseId(idPart);
-        }
-
-        private Long nestedId(String path, String prefix, String suffix) {
-            if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
-                return null;
-            }
-            String idPart = path.substring(prefix.length(), path.length() - suffix.length());
-            if (idPart.length() == 0 || idPart.contains("/")) {
-                return null;
-            }
-            return parseId(idPart);
-        }
-
-        private Long parseId(String value) {
-            try {
-                return Long.valueOf(value);
-            } catch (NumberFormatException e) {
-                return null;
+                return Long.parseLong(value);
+            } catch (Exception e) {
+                throw new IllegalArgumentException(name + " must be a number");
             }
         }
 

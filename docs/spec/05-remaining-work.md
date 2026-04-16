@@ -9,7 +9,7 @@
 - 阶段 2：SQLite schema、mapping / connection 持久化已完成。
 - 阶段 3：异步 packet capture、截断、SQLite writer 已完成。
 - 阶段 4：队列满 spill 到磁盘和回放已完成。
-- 阶段 5 子集：Netty admin server、登录/session、mapping API、`/api/runtime`、connection 查询 API、packet 查询 API、payload 下载已完成。
+- 阶段 5 子集：Netty admin server、登录/session、mapping API、`/api/runtime`、connection 查询 API、packet 查询 API、payload 下载、API 错误码和轻量 router 已完成。
 
 ## 范围约束
 
@@ -101,6 +101,8 @@ GET /api/packets/{id}/payload
 - payload 下载响应头包含 octet-stream 和下载文件名。
 
 ### 1.3 API 错误码和路由硬化
+
+状态：已完成。
 
 来源映射：
 
@@ -384,13 +386,12 @@ DELETE /api/mappings/{id}/packets
 
 ## 推荐剩余开发顺序
 
-1. 补 API 错误码和 router 拆分。
-2. 完成阶段 6 Web UI。
-3. 补 runtime 关闭原因和端口错误分类。
-4. 补 packet 清理 API。
-5. 添加 Maven Wrapper。
-6. 增加单元测试和集成测试。
-7. 更新 README。
+1. 完成阶段 6 Web UI。
+2. 补 runtime 关闭原因和端口错误分类。
+3. 补 packet 清理 API。
+4. 添加 Maven Wrapper。
+5. 增加单元测试和集成测试。
+6. 更新 README。
 
 ## 最小可交付剩余清单
 
