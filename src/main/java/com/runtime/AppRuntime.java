@@ -1,5 +1,6 @@
 package com.runtime;
 
+import com.admin.NettyAdminServer;
 import com.capture.CaptureOptions;
 import com.capture.PacketCaptureService;
 import com.capture.SpillFileManager;
@@ -30,8 +31,19 @@ public class AppRuntime {
 
     private final PacketCaptureService packetCaptureService;
 
+    private final NettyAdminServer nettyAdminServer;
+
     public AppRuntime(GlobalConfig globalConfig) {
         this.globalConfig = globalConfig;
+        if (this.globalConfig.getAdmin() == null) {
+            this.globalConfig.setAdmin(new com.model.AdminConfig());
+        }
+        if (this.globalConfig.getStore() == null) {
+            this.globalConfig.setStore(new com.model.StoreConfig());
+        }
+        if (this.globalConfig.getCapture() == null) {
+            this.globalConfig.setCapture(new com.model.CaptureConfig());
+        }
         this.sqliteDatabase = new SqliteDatabase(globalConfig.getStore().getSqlitePath());
         new DatabaseInitializer(sqliteDatabase).initialize();
         this.mappingRepository = new MappingRepository(sqliteDatabase);
@@ -43,6 +55,7 @@ public class AppRuntime {
                 new SpillFileManager(globalConfig.getStore().getSpillDir()));
         this.nettyGroups = new NettyGroups();
         this.runtimeMappingManager = new RuntimeMappingManager(nettyGroups, mappingRepository, connectionRepository, packetCaptureService);
+        this.nettyAdminServer = new NettyAdminServer(globalConfig.getAdmin(), runtimeMappingManager, packetCaptureService, nettyGroups);
     }
 
     public void start() {
@@ -51,18 +64,18 @@ public class AppRuntime {
         if (persistedMappings.size() > 0) {
             log.info("从 SQLite 恢复 {} 个 mapping", persistedMappings.size());
             runtimeMappingManager.restoreAll(persistedMappings);
-            return;
-        }
-        if (globalConfig.getMappings() == null || globalConfig.getMappings().size() == 0) {
+        } else if (globalConfig.getMappings() == null || globalConfig.getMappings().size() == 0) {
             log.info("SQLite 和启动配置中都没有 mapping，当前仅启动 runtime 基础服务");
-            return;
+        } else {
+            log.info("SQLite 中没有 mapping，导入 yml 初始配置");
+            globalConfig.verifyConfiguration();
+            runtimeMappingManager.startAll(globalConfig.getMappings());
         }
-        log.info("SQLite 中没有 mapping，导入 yml 初始配置");
-        globalConfig.verifyConfiguration();
-        runtimeMappingManager.startAll(globalConfig.getMappings());
+        nettyAdminServer.start();
     }
 
     public void shutdown() {
+        nettyAdminServer.stop();
         runtimeMappingManager.shutdown();
         packetCaptureService.shutdown();
         nettyGroups.shutdown();

@@ -63,7 +63,15 @@ public class RuntimeMappingManager {
         }
         List<MappingRuntime> started = new ArrayList<>();
         for (MappingEntity mappingEntity : mappings) {
-            started.add(startExistingMapping(mappingEntity.getId(), mappingEntity.toMapping()));
+            try {
+                started.add(startExistingMapping(mappingEntity.getId(), mappingEntity.toMapping(), true));
+            } catch (RuntimeException e) {
+                log.warn("restore mapping {} failed:{}", mappingEntity.getId(), e.getMessage());
+                MappingRuntime runtime = runtimes.get(mappingEntity.getId());
+                if (runtime != null) {
+                    started.add(runtime);
+                }
+            }
         }
         return started;
     }
@@ -77,11 +85,21 @@ public class RuntimeMappingManager {
     }
 
     public MappingRuntime startExistingMapping(long mappingId, Mapping mapping) {
+        return startExistingMapping(mappingId, mapping, false);
+    }
+
+    private MappingRuntime startExistingMapping(long mappingId, Mapping mapping, boolean tolerateStartFailure) {
         synchronized (mappingMutationLock) {
             validateMapping(mapping, mappingId);
             MappingRuntime runtime = new MappingRuntime(mappingId, mapping);
             runtimes.put(mappingId, runtime);
-            startRuntime(runtime);
+            try {
+                startRuntime(runtime);
+            } catch (RuntimeException e) {
+                if (!tolerateStartFailure) {
+                    throw e;
+                }
+            }
             return runtime;
         }
     }
@@ -90,6 +108,29 @@ public class RuntimeMappingManager {
         synchronized (mappingMutationLock) {
             MappingRuntime runtime = getRequiredRuntime(mappingId);
             stopRuntime(runtime);
+            Mapping mapping = runtime.getMappingSnapshot();
+            mapping.setEnable(false);
+            if (mappingRepository != null) {
+                mappingRepository.update(mappingId, mapping);
+            }
+        }
+    }
+
+    public MappingRuntime startMapping(long mappingId) {
+        synchronized (mappingMutationLock) {
+            MappingRuntime runtime = getRequiredRuntime(mappingId);
+            Mapping mapping = runtime.getMappingSnapshot();
+            if (runtime.getStatus() == MappingStatus.RUNNING) {
+                return runtime;
+            }
+            mapping.setEnable(true);
+            validateMapping(mapping, mappingId);
+            if (mappingRepository != null) {
+                mappingRepository.update(mappingId, mapping);
+            }
+            runtime.setLastError(null);
+            startRuntime(runtime);
+            return runtime;
         }
     }
 
@@ -97,14 +138,13 @@ public class RuntimeMappingManager {
         synchronized (mappingMutationLock) {
             MappingRuntime runtime = getRequiredRuntime(mappingId);
             validateMapping(newMapping, mappingId);
-            boolean wasRunning = runtime.getStatus() == MappingStatus.RUNNING;
             stopRuntime(runtime);
             if (mappingRepository != null) {
                 mappingRepository.update(mappingId, newMapping);
             }
             runtime.setMappingSnapshot(newMapping);
             runtime.setLastError(null);
-            if (wasRunning && Boolean.TRUE.equals(newMapping.getEnable())) {
+            if (Boolean.TRUE.equals(newMapping.getEnable())) {
                 startRuntime(runtime);
             } else {
                 runtime.setStatus(MappingStatus.STOPPED);

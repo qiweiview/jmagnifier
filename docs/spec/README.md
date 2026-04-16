@@ -9,6 +9,7 @@
 3. [02-runtime-mapping.md](02-runtime-mapping.md)：动态 mapping 生命周期、监听端口管理、连接关闭策略。
 4. [03-packet-capture-sqlite.md](03-packet-capture-sqlite.md)：异步报文采集、SQLite 表结构、队列满时磁盘缓冲策略。
 5. [04-implementation-plan.md](04-implementation-plan.md)：推荐开发阶段、验收标准和风险点。
+6. [05-remaining-work.md](05-remaining-work.md)：当前代码基线后的剩余工作、注释和原始 spec 映射关系。
 
 ## 已确认的产品约束
 
@@ -19,4 +20,3 @@
 - 报文截断大小 `maxCaptureBytes` 是全局配置。
 - 报文队列满时先把队列内容落到磁盘缓冲文件，然后清空内存队列继续接收。
 - 管理端需要简单密码保护。
-

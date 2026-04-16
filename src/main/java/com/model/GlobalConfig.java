@@ -16,6 +16,8 @@ public class GlobalConfig {
 
     private StoreConfig store = new StoreConfig();
 
+    private AdminConfig admin = new AdminConfig();
+
     private CaptureConfig capture = new CaptureConfig();
 
     private List<Mapping> mappings;
@@ -50,6 +52,9 @@ public class GlobalConfig {
         }
         if (store == null) {
             store = new StoreConfig();
+        }
+        if (admin == null) {
+            admin = new AdminConfig();
         }
         if (capture == null) {
             capture = new CaptureConfig();

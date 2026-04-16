@@ -1,3 +1,9 @@
+admin:
+  host: "127.0.0.1"
+  port: 8080
+  password: "admin"
+  sessionTimeoutMinutes: 720
+
 store:
   sqlitePath: "./data/jmagnifier.db"
   spillDir: "./data/spill"
