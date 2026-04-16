@@ -7,32 +7,56 @@
   <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
+  <div class="shell-bg" aria-hidden="true">
+    <div class="bg-orb bg-orb-primary"></div>
+    <div class="bg-orb bg-orb-secondary"></div>
+    <div class="bg-grid"></div>
+  </div>
   <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">JM</div>
-        <div>
-          <div class="brand-title">jmagnifier</div>
-          <div class="brand-subtitle">协议抓取与转发</div>
+    <button id="nav-backdrop" class="nav-backdrop" type="button" aria-label="关闭导航"></button>
+    <aside id="sidebar" class="sidebar" aria-label="主导航">
+      <div class="sidebar-inner">
+        <div class="sidebar-card">
+          <div class="brand">
+            <div class="brand-mark">JM</div>
+            <div>
+              <div class="brand-title">jmagnifier</div>
+              <div class="brand-subtitle">协议抓取与转发</div>
+            </div>
+          </div>
+          <p class="eyebrow">Adaptive Layered Simplicity</p>
+          <p class="sidebar-copy">简单展示关键状态，按需展开连接与报文细节，适合长时间监控和日常运维。</p>
+        </div>
+        <nav class="nav">
+          <a href="/" data-nav="/"><span class="nav-index">01</span><span>运行状态</span></a>
+          <a href="/mappings" data-nav="/mappings"><span class="nav-index">02</span><span>映射配置</span></a>
+          <a href="/connections" data-nav="/connections"><span class="nav-index">03</span><span>连接记录</span></a>
+          <a href="/packets" data-nav="/packets"><span class="nav-index">04</span><span>报文记录</span></a>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="context-chip">白蓝控制台</div>
+          <button id="logout-button" class="secondary-button" type="button">退出登录</button>
         </div>
       </div>
-      <nav class="nav">
-        <a href="/" data-nav="/">运行状态</a>
-        <a href="/mappings" data-nav="/mappings">映射配置</a>
-        <a href="/connections" data-nav="/connections">连接记录</a>
-        <a href="/packets" data-nav="/packets">报文记录</a>
-      </nav>
-      <button id="logout-button" class="secondary-button" type="button">退出登录</button>
     </aside>
     <main class="main">
-      <div id="view"></div>
+      <header class="main-topbar">
+        <button id="nav-toggle" class="icon-button nav-toggle" type="button" aria-label="打开导航" aria-expanded="false">菜单</button>
+        <div class="topbar-copy">
+          <p id="topbar-kicker" class="topbar-kicker">控制台</p>
+          <div id="topbar-title" class="topbar-title">运行状态</div>
+        </div>
+      </header>
+      <section class="main-surface">
+        <div id="view"></div>
+      </section>
     </main>
   </div>
-  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-panel">
       <div class="modal-head">
         <h2 id="modal-title"></h2>
-        <button id="modal-close" class="icon-button" type="button" aria-label="关闭">x</button>
+        <button id="modal-close" class="icon-button" type="button" aria-label="关闭">关闭</button>
       </div>
       <div id="modal-body"></div>
     </div>

@@ -4,11 +4,21 @@
   var modalTitle = document.getElementById('modal-title');
   var modalBody = document.getElementById('modal-body');
   var modalClose = document.getElementById('modal-close');
+  var navToggle = document.getElementById('nav-toggle');
+  var navBackdrop = document.getElementById('nav-backdrop');
+  var topbarKicker = document.getElementById('topbar-kicker');
+  var topbarTitle = document.getElementById('topbar-title');
   var refreshTimer = null;
   var state = {
     mappings: [],
     connectionPage: 1,
     packetPage: 1
+  };
+  var ROUTE_META = {
+    '/': { kicker: '控制台', title: '运行状态' },
+    '/mappings': { kicker: '配置管理', title: '映射配置' },
+    '/connections': { kicker: '连接追踪', title: '连接记录' },
+    '/packets': { kicker: '抓包分析', title: '报文记录' }
   };
   var FIELD_LABELS = {
     mappingId: '映射 ID',
@@ -144,6 +154,25 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-nav]'), function (link) {
       link.classList.toggle('active', link.getAttribute('data-nav') === path);
     });
+    updateTopbar(path);
+  }
+
+  function updateTopbar(path) {
+    var meta = ROUTE_META[path] || ROUTE_META['/'];
+    if (topbarKicker) {
+      topbarKicker.textContent = meta.kicker;
+    }
+    if (topbarTitle) {
+      topbarTitle.textContent = meta.title;
+    }
+  }
+
+  function toggleNav(forceOpen) {
+    var open = typeof forceOpen === 'boolean' ? forceOpen : !document.body.classList.contains('nav-open');
+    document.body.classList.toggle('nav-open', open);
+    if (navToggle) {
+      navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
   }
 
   function setError(target, error) {
@@ -163,12 +192,20 @@
   }
 
   function pageHead(title, subtitle, action) {
-    return '<div class="page-head"><div><h1>' + escapeHtml(title) + '</h1><p>' + escapeHtml(subtitle || '') + '</p></div>' + (action || '') + '</div>';
+    return '<section class="page-hero"><div><p class="eyebrow">Adaptive Layered Simplicity</p><h1>' + escapeHtml(title) + '</h1><p class="page-copy">' + escapeHtml(subtitle || '') + '</p></div>' + (action ? '<div class="hero-actions">' + action + '</div>' : '') + '</section>';
+  }
+
+  function heroBadge(text) {
+    return '<span class="hero-badge">' + escapeHtml(text) + '</span>';
+  }
+
+  function emptyTableRow(colspan, message) {
+    return '<tr><td colspan="' + colspan + '" class="table-empty">' + escapeHtml(message) + '</td></tr>';
   }
 
   function renderRuntime() {
     clearTimer();
-    view.innerHTML = pageHead('运行状态', '进程实时状态与抓包统计') + '<div id="runtime-metrics" class="grid metrics"></div>';
+    view.innerHTML = pageHead('运行状态', '进程实时状态与抓包统计', heroBadge('自动刷新 3 秒') + heroBadge('白蓝简洁视图')) + '<div id="runtime-metrics" class="grid metrics"></div>';
     function load() {
       api('/api/runtime').then(function (data) {
         document.getElementById('runtime-metrics').innerHTML = [
@@ -195,7 +232,7 @@
 
   function renderMappings() {
     clearTimer();
-    view.innerHTML = pageHead('映射配置', '运行时转发规则管理') +
+    view.innerHTML = pageHead('映射配置', '运行时转发规则管理', heroBadge('简单表单') + heroBadge('分层协议配置')) +
       '<div class="split">' +
       '<section class="panel"><div class="panel-head"><h2 id="mapping-form-title">新建映射</h2></div><div class="panel-body">' +
       '<form id="mapping-form" class="form-grid">' +
@@ -240,7 +277,7 @@
   function loadMappings() {
     api('/api/mappings').then(function (items) {
       state.mappings = items || [];
-      document.getElementById('mapping-rows').innerHTML = state.mappings.map(function (item) {
+      document.getElementById('mapping-rows').innerHTML = state.mappings.length ? state.mappings.map(function (item) {
         return '<tr>' +
           '<td>' + item.id + '</td>' +
           '<td>' + escapeHtml(item.name) + '<div class="muted">' + (item.enabled ? '已启用' : '已禁用') + '</div></td>' +
@@ -255,7 +292,7 @@
           '<button class="compact-button" type="button" data-stop="' + item.id + '">停止</button>' +
           '<button class="danger-button" type="button" data-delete="' + item.id + '">删除</button>' +
           '</td></tr>';
-      }).join('');
+      }).join('') : emptyTableRow(8, '当前没有映射配置，可以先在左侧表单创建一条映射。');
       bindMappingActions();
     }).catch(function (error) {
       setError('mapping-message', error);
@@ -407,7 +444,7 @@
 
   function renderConnections() {
     clearTimer();
-    view.innerHTML = pageHead('连接记录', '已保存的 TCP 连接记录') +
+    view.innerHTML = pageHead('连接记录', '已保存的 TCP 连接记录', heroBadge('条件筛选') + heroBadge('详情弹层')) +
       '<section class="panel"><div class="panel-body">' +
       '<div class="toolbar">' +
       field('connection-mapping-id', '映射 ID') +
@@ -445,7 +482,7 @@
       pageSize: 50
     })).then(function (page) {
       var rows = page.items || [];
-      document.getElementById('connection-rows').innerHTML = rows.map(function (item) {
+      document.getElementById('connection-rows').innerHTML = rows.length ? rows.map(function (item) {
         return '<tr>' +
           '<td>' + item.id + '</td>' +
           '<td>' + item.mappingId + '</td>' +
@@ -457,7 +494,7 @@
           '<td>' + item.bytesUp + ' 上行<br>' + item.bytesDown + ' 下行</td>' +
           '<td><button class="compact-button" type="button" data-connection-detail="' + item.id + '">详情</button></td>' +
           '</tr>';
-      }).join('');
+      }).join('') : emptyTableRow(9, '当前筛选条件下没有连接记录。');
       bindConnectionDetails();
       document.getElementById('connection-page-info').textContent = '第 ' + page.page + ' 页 / 共 ' + Math.max(1, Math.ceil(page.total / page.pageSize)) + ' 页';
       document.getElementById('connection-prev').disabled = page.page <= 1;
@@ -489,7 +526,7 @@
 
   function renderPackets() {
     clearTimer();
-    view.innerHTML = pageHead('报文记录', '已捕获报文摘要') +
+    view.innerHTML = pageHead('报文记录', '已捕获报文摘要', heroBadge('文本预览') + heroBadge('十六进制预览')) +
       '<section class="panel"><div class="panel-body">' +
       '<div class="toolbar">' +
       field('packet-mapping-id', '映射 ID') +
@@ -527,7 +564,7 @@
       pageSize: 50
     })).then(function (page) {
       var rows = page.items || [];
-      document.getElementById('packet-rows').innerHTML = rows.map(function (item) {
+      document.getElementById('packet-rows').innerHTML = rows.length ? rows.map(function (item) {
         return '<tr>' +
           '<td>' + item.id + '</td>' +
           '<td>' + item.connectionId + '</td>' +
@@ -539,7 +576,7 @@
           '<td>' + escapeHtml(item.receivedAt) + '</td>' +
           '<td><button class="compact-button" type="button" data-packet-detail="' + item.id + '">详情</button></td>' +
           '</tr>';
-      }).join('');
+      }).join('') : emptyTableRow(9, '当前筛选条件下没有报文记录。');
       bindPacketDetails();
       document.getElementById('packet-page-info').textContent = '第 ' + page.page + ' 页 / 共 ' + Math.max(1, Math.ceil(page.total / page.pageSize)) + ' 页';
       document.getElementById('packet-prev').disabled = page.page <= 1;
@@ -617,10 +654,12 @@
   }
 
   function openModal() {
+    document.body.classList.add('modal-open');
     modal.classList.remove('hidden');
   }
 
   function closeModal() {
+    document.body.classList.remove('modal-open');
     modal.classList.add('hidden');
     modalTitle.textContent = '';
     modalBody.innerHTML = '';
@@ -634,6 +673,7 @@
   }
 
   function route() {
+    toggleNav(false);
     setActiveNav();
     if (window.location.pathname === '/mappings') {
       renderMappings();
@@ -651,10 +691,35 @@
       window.location.href = '/login';
     });
   });
+  if (navToggle) {
+    navToggle.addEventListener('click', function () {
+      toggleNav();
+    });
+  }
+  if (navBackdrop) {
+    navBackdrop.addEventListener('click', function () {
+      toggleNav(false);
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-nav]'), function (link) {
+    link.addEventListener('click', function () {
+      toggleNav(false);
+    });
+  });
   modalClose.addEventListener('click', closeModal);
   modal.addEventListener('click', function (event) {
     if (event.target === modal) {
       closeModal();
+    }
+  });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') {
+      if (document.body.classList.contains('nav-open')) {
+        toggleNav(false);
+      }
+      if (!modal.classList.contains('hidden')) {
+        closeModal();
+      }
     }
   });
   window.addEventListener('popstate', route);

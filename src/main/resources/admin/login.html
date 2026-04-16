@@ -7,15 +7,34 @@
   <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body class="login-page">
+  <div class="shell-bg" aria-hidden="true">
+    <div class="bg-orb bg-orb-primary"></div>
+    <div class="bg-orb bg-orb-secondary"></div>
+    <div class="bg-grid"></div>
+  </div>
   <main class="login-shell">
+    <section class="login-hero">
+      <div class="login-hero-card">
+        <div class="brand-mark">JM</div>
+        <p class="eyebrow">Adaptive Layered Simplicity</p>
+        <h1>jmagnifier 管理台</h1>
+        <p class="login-copy">保持界面简洁，按状态、配置、连接、报文逐层展开，让日常巡检和定位问题都更直接。</p>
+        <div class="hero-points">
+          <span>实时状态</span>
+          <span>分层详情</span>
+          <span>白蓝配色</span>
+        </div>
+      </div>
+    </section>
     <section class="login-panel">
-      <div class="brand-mark">JM</div>
-      <h1>jmagnifier</h1>
+      <p class="eyebrow">Admin Access</p>
+      <h2>登录</h2>
+      <p class="login-copy">输入管理密码进入控制台。</p>
       <form id="login-form" class="login-form">
         <label for="password">密码</label>
         <input id="password" name="password" type="password" autocomplete="current-password" autofocus>
-        <button type="submit">登录</button>
-        <p id="login-message" class="form-message" role="status"></p>
+        <button id="login-submit" type="submit">进入控制台</button>
+        <p id="login-message" class="form-message" role="status" aria-live="polite"></p>
       </form>
     </section>
   </main>
