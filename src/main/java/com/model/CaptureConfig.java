@@ -4,7 +4,7 @@ public class CaptureConfig {
 
     private Boolean enabled = true;
 
-    private int maxCaptureBytes = 4096;
+    private int maxCaptureBytes = 5*1024*1024;//5MB
 
     private int queueCapacity = 10000;
 

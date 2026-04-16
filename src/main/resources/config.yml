@@ -10,7 +10,7 @@ store:
 
 capture:
   enabled: true
-  maxCaptureBytes: 4096
+  maxCaptureBytes: 40960
   queueCapacity: 10000
   batchSize: 100
   flushIntervalMillis: 200

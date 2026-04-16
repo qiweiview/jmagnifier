@@ -854,8 +854,11 @@
   function packetNotices(data, detail) {
     var notices = [];
     var http = packetHttpView(data);
-    if (packetPreviewTruncated(data) || data.truncated) {
-      notices.push('仅展示前 ' + packetPreviewBytes(data) + ' 字节' + (data.truncated ? '，当前报文已截断' : ''));
+    if (packetPreviewTruncated(data)) {
+      notices.push('仅展示前 ' + packetPreviewBytes(data) + ' 字节');
+    }
+    if (data.truncated) {
+      notices.push('当前报文已截断');
     }
     if (detail.primaryTab === 'text' && detail.textTab === 'json') {
       if (!http || !http.bodyDetected) {

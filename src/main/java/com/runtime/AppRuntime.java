@@ -62,6 +62,14 @@ public class AppRuntime {
     }
 
     public void start() {
+        log.info("抓包配置生效值 enabled={}, maxCaptureBytes={}, queueCapacity={}, batchSize={}, flushIntervalMillis={}, sqlitePath={}, spillDir={}",
+                packetCaptureService.isEnabled(),
+                packetCaptureService.getMaxCaptureBytes(),
+                packetCaptureService.getQueueCapacity(),
+                packetCaptureService.getBatchSize(),
+                packetCaptureService.getFlushIntervalMillis(),
+                globalConfig.getStore().getSqlitePath(),
+                globalConfig.getStore().getSpillDir());
         packetCaptureService.start();
         List<MappingEntity> persistedMappings = mappingRepository.findAllActive();
         if (persistedMappings.size() > 0) {

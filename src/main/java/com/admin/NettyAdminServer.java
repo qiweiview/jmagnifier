@@ -35,7 +35,7 @@ public class NettyAdminServer {
 
     private static final Logger log = LoggerFactory.getLogger(NettyAdminServer.class);
 
-    private static final int PREVIEW_BYTES = 4096;
+    private static final int PREVIEW_BYTES = 0;
 
     private final AdminConfig adminConfig;
 

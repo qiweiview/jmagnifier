@@ -113,6 +113,22 @@ public class PacketCaptureService {
         return options.getQueueCapacity();
     }
 
+    public boolean isEnabled() {
+        return options.isEnabled();
+    }
+
+    public int getMaxCaptureBytes() {
+        return options.getMaxCaptureBytes();
+    }
+
+    public int getBatchSize() {
+        return options.getBatchSize();
+    }
+
+    public long getFlushIntervalMillis() {
+        return options.getFlushIntervalMillis();
+    }
+
     public long getPacketsWritten() {
         return packetsWritten.get();
     }

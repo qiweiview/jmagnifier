@@ -30,9 +30,9 @@ public class PacketPayloadViewBuilder {
 
     public PacketPayloadView build(PacketRepository.PacketRecord record) {
         byte[] payload = record == null || record.payload == null ? new byte[0] : record.payload;
-        int visibleLength = Math.min(payload.length, previewBytes);
+        int visibleLength = previewBytes <= 0 ? payload.length : Math.min(payload.length, previewBytes);
         byte[] preview = Arrays.copyOf(payload, visibleLength);
-        boolean previewTruncated = payload.length > previewBytes;
+        boolean previewTruncated = previewBytes > 0 && payload.length > previewBytes;
         return new PacketPayloadView(
                 decodeText(preview),
                 hexPreview(preview),
