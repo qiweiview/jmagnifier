@@ -10,6 +10,7 @@
 4. [03-packet-capture-sqlite.md](03-packet-capture-sqlite.md)：异步报文采集、SQLite 表结构、队列满时磁盘缓冲策略。
 5. [04-implementation-plan.md](04-implementation-plan.md)：推荐开发阶段、验收标准和风险点。
 6. [05-remaining-work.md](05-remaining-work.md)：当前代码基线后的剩余工作、注释和原始 spec 映射关系。
+7. [06-protocol-extension-http-tls.md](06-protocol-extension-http-tls.md)：从 raw TCP 扩展到 `tcp/http/https` 组合转发的协议层设计、配置、pipeline 和实施阶段。
 
 ## 已确认的产品约束
 

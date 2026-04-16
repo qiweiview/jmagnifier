@@ -3,6 +3,8 @@ package com.mapping;
 import com.capture.PacketCaptureService;
 import com.core.DataReceiver;
 import com.model.Mapping;
+import com.protocol.DefaultProtocolPipelineFactory;
+import com.protocol.ProtocolPipelineFactory;
 import com.runtime.NettyGroups;
 import com.store.ConnectionRepository;
 import com.store.MappingEntity;
@@ -30,6 +32,8 @@ public class RuntimeMappingManager {
 
     private final PacketCaptureService packetCaptureService;
 
+    private final ProtocolPipelineFactory protocolPipelineFactory;
+
     private final AtomicLong mappingIdGenerator = new AtomicLong(1);
 
     private final Map<Long, MappingRuntime> runtimes = new ConcurrentHashMap<>();
@@ -46,6 +50,7 @@ public class RuntimeMappingManager {
         this.mappingRepository = mappingRepository;
         this.connectionRepository = connectionRepository;
         this.packetCaptureService = packetCaptureService;
+        this.protocolPipelineFactory = new DefaultProtocolPipelineFactory();
     }
 
     public List<MappingRuntime> startAll(List<Mapping> mappings) {
@@ -193,7 +198,8 @@ public class RuntimeMappingManager {
                 nettyGroups.getTcpWorkerGroup(),
                 nettyGroups.getTcpClientGroup(),
                 connectionRepository,
-                packetCaptureService);
+                packetCaptureService,
+                protocolPipelineFactory);
         runtime.setDataReceiver(dataReceiver);
         try {
             dataReceiver.start();
@@ -249,6 +255,7 @@ public class RuntimeMappingManager {
         if (mapping.getForwardHost() == null || mapping.getForwardHost().trim().length() == 0) {
             throw new MappingOperationException("INVALID_FORWARD_HOST", "forwardHost is required");
         }
+        validateProtocolConfiguration(mapping);
         if (!Boolean.TRUE.equals(mapping.getEnable())) {
             return;
         }
@@ -262,5 +269,25 @@ public class RuntimeMappingManager {
                         "listen port already configured: " + mapping.getListenPort());
             }
         }
+    }
+
+    private void validateProtocolConfiguration(Mapping mapping) {
+        String listenProtocol = mapping.getListen() == null ? null : mapping.getListen().getApplicationProtocol();
+        String forwardProtocol = mapping.getForward() == null ? null : mapping.getForward().getApplicationProtocol();
+        if (!isSupportedApplicationProtocol(listenProtocol) || !isSupportedApplicationProtocol(forwardProtocol)) {
+            throw new MappingOperationException("INVALID_PROTOCOL", "applicationProtocol must be tcp or http");
+        }
+        if (mapping.isHttpPath() && (!"http".equalsIgnoreCase(listenProtocol) || !"http".equalsIgnoreCase(forwardProtocol))) {
+            throw new MappingOperationException("INVALID_PROTOCOL_COMBINATION",
+                    "http mappings require both listen.applicationProtocol and forward.applicationProtocol to be http");
+        }
+        if (Boolean.TRUE.equals(mapping.getEnable()) && !mapping.isRawTcpPath()) {
+            throw new MappingOperationException("UNSUPPORTED_PROTOCOL",
+                    "http/https pipeline is not implemented yet: " + mapping.getListenMode() + " -> " + mapping.getForwardMode());
+        }
+    }
+
+    private boolean isSupportedApplicationProtocol(String protocol) {
+        return "tcp".equalsIgnoreCase(protocol) || "http".equalsIgnoreCase(protocol);
     }
 }

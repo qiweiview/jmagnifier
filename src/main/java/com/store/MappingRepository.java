@@ -9,6 +9,8 @@ import java.util.List;
 
 public class MappingRepository {
 
+    private static final MappingConfigJsonCodec CONFIG_JSON_CODEC = new MappingConfigJsonCodec();
+
     private final SqliteDatabase sqliteDatabase;
 
     public MappingRepository(SqliteDatabase sqliteDatabase) {
@@ -16,7 +18,7 @@ public class MappingRepository {
     }
 
     public List<MappingEntity> findAllActive() {
-        String sql = "SELECT id, name, enabled, listen_port, forward_host, forward_port, created_at, updated_at "
+        String sql = "SELECT id, name, enabled, listen_port, forward_host, forward_port, config_json, created_at, updated_at "
                 + "FROM mapping WHERE deleted = 0 ORDER BY id ASC";
         try (Connection connection = sqliteDatabase.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql);
@@ -34,8 +36,8 @@ public class MappingRepository {
     public long insert(Mapping mapping) {
         mapping.applyDefaults();
         String now = Instant.now().toString();
-        String sql = "INSERT INTO mapping(name, enabled, listen_port, forward_host, forward_port, deleted, created_at, updated_at) "
-                + "VALUES (?, ?, ?, ?, ?, 0, ?, ?)";
+        String sql = "INSERT INTO mapping(name, enabled, listen_port, forward_host, forward_port, config_json, deleted, created_at, updated_at) "
+                + "VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)";
         try (Connection connection = sqliteDatabase.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setString(1, mapping.getName());
@@ -43,8 +45,9 @@ public class MappingRepository {
             statement.setInt(3, mapping.getListenPort());
             statement.setString(4, mapping.getForwardHost());
             statement.setInt(5, mapping.getForwardPort());
-            statement.setString(6, now);
+            statement.setString(6, CONFIG_JSON_CODEC.toJson(mapping));
             statement.setString(7, now);
+            statement.setString(8, now);
             statement.executeUpdate();
             try (ResultSet keys = statement.getGeneratedKeys()) {
                 if (keys.next()) {
@@ -59,7 +62,7 @@ public class MappingRepository {
 
     public void update(long id, Mapping mapping) {
         mapping.applyDefaults();
-        String sql = "UPDATE mapping SET name = ?, enabled = ?, listen_port = ?, forward_host = ?, forward_port = ?, updated_at = ? "
+        String sql = "UPDATE mapping SET name = ?, enabled = ?, listen_port = ?, forward_host = ?, forward_port = ?, config_json = ?, updated_at = ? "
                 + "WHERE id = ? AND deleted = 0";
         try (Connection connection = sqliteDatabase.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
@@ -68,8 +71,9 @@ public class MappingRepository {
             statement.setInt(3, mapping.getListenPort());
             statement.setString(4, mapping.getForwardHost());
             statement.setInt(5, mapping.getForwardPort());
-            statement.setString(6, Instant.now().toString());
-            statement.setLong(7, id);
+            statement.setString(6, CONFIG_JSON_CODEC.toJson(mapping));
+            statement.setString(7, Instant.now().toString());
+            statement.setLong(8, id);
             if (statement.executeUpdate() == 0) {
                 throw new RuntimeException("mapping not found: " + id);
             }
@@ -98,6 +102,7 @@ public class MappingRepository {
         entity.setListenPort(resultSet.getInt("listen_port"));
         entity.setForwardHost(resultSet.getString("forward_host"));
         entity.setForwardPort(resultSet.getInt("forward_port"));
+        entity.setConfigJson(resultSet.getString("config_json"));
         entity.setCreatedAt(resultSet.getString("created_at"));
         entity.setUpdatedAt(resultSet.getString("updated_at"));
         return entity;

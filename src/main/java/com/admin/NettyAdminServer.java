@@ -280,19 +280,13 @@ public class NettyAdminServer {
 
         private Mapping readMapping(FullHttpRequest request) {
             Map<String, Object> body = readJsonMap(request);
-            Mapping mapping = Mapping.createDefaultMapping();
-            if (body.containsKey("name")) {
-                mapping.setName(stringValue(body.get("name")));
-            }
+            Mapping mapping = objectMapper.convertValue(body, Mapping.class);
             if (body.containsKey("enabled")) {
                 mapping.setEnable(booleanValue(body.get("enabled")));
             }
             if (body.containsKey("enable")) {
                 mapping.setEnable(booleanValue(body.get("enable")));
             }
-            mapping.setListenPort(intValue(body.get("listenPort"), "listenPort"));
-            mapping.setForwardHost(stringValue(body.get("forwardHost")));
-            mapping.setForwardPort(intValue(body.get("forwardPort"), "forwardPort"));
             mapping.applyDefaults();
             return mapping;
         }
@@ -308,6 +302,9 @@ public class NettyAdminServer {
                 return HttpResponseStatus.CONFLICT;
             }
             if ("INVALID_PORT".equals(code) || "INVALID_FORWARD_HOST".equals(code) || "BAD_REQUEST".equals(code)) {
+                return HttpResponseStatus.BAD_REQUEST;
+            }
+            if ("INVALID_PROTOCOL".equals(code) || "INVALID_PROTOCOL_COMBINATION".equals(code) || "UNSUPPORTED_PROTOCOL".equals(code)) {
                 return HttpResponseStatus.BAD_REQUEST;
             }
             return HttpResponseStatus.INTERNAL_SERVER_ERROR;
@@ -458,6 +455,11 @@ public class NettyAdminServer {
             data.put("listenPort", mapping.getListenPort());
             data.put("forwardHost", mapping.getForwardHost());
             data.put("forwardPort", mapping.getForwardPort());
+            data.put("listen", mapping.getListen());
+            data.put("forward", mapping.getForward());
+            data.put("http", mapping.getHttp());
+            data.put("listenMode", mapping.getListenMode());
+            data.put("forwardMode", mapping.getForwardMode());
             data.put("status", runtime.getStatus().name());
             data.put("activeConnections", runtime.getActiveConnections());
             data.put("lastError", runtime.getLastError());

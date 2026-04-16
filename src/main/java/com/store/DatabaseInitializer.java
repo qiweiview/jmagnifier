@@ -1,6 +1,7 @@
 package com.store;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
@@ -27,10 +28,12 @@ public class DatabaseInitializer {
                     + "listen_port INTEGER NOT NULL,"
                     + "forward_host TEXT NOT NULL,"
                     + "forward_port INTEGER NOT NULL,"
+                    + "config_json TEXT,"
                     + "deleted INTEGER NOT NULL DEFAULT 0,"
                     + "created_at TEXT NOT NULL,"
                     + "updated_at TEXT NOT NULL"
                     + ")");
+            ensureColumn(connection, "mapping", "config_json", "TEXT");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_mapping_deleted ON mapping(deleted)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_mapping_listen_port ON mapping(listen_port)");
             statement.execute("CREATE TABLE IF NOT EXISTS connection ("
@@ -85,6 +88,27 @@ public class DatabaseInitializer {
                     + ")");
         } catch (SQLException e) {
             throw new RuntimeException("initialize sqlite schema failed", e);
+        }
+    }
+
+    private void ensureColumn(Connection connection, String tableName, String columnName, String columnDefinition) throws SQLException {
+        if (hasColumn(connection, tableName, columnName)) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE " + tableName + " ADD COLUMN " + columnName + " " + columnDefinition);
+        }
+    }
+
+    private boolean hasColumn(Connection connection, String tableName, String columnName) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery("PRAGMA table_info(" + tableName + ")")) {
+            while (resultSet.next()) {
+                if (columnName.equalsIgnoreCase(resultSet.getString("name"))) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

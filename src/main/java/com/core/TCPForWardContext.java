@@ -1,9 +1,8 @@
 package com.core;
 
-import com.capture.PacketCaptureService;
-import com.capture.PacketDirection;
-import com.capture.PacketEvent;
 import com.model.Mapping;
+import com.protocol.ProtocolBridge;
+import com.protocol.ProtocolPipelineFactory;
 import com.util.NettyComponentConfig;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
@@ -12,7 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -22,19 +20,15 @@ public class TCPForWardContext implements VComponent {
 
     private Mapping mapping;
 
-    private long mappingId = -1;
-
     private ConnectionContext connectionContext;
-
-    private PacketCaptureService packetCaptureService;
 
     private String forwardHost;
 
     private int forwardPort;
 
-    private ByteReadHandler byteReadHandler;
+    private ProtocolBridge protocolBridge;
 
-    private ByteReadHandler forwardByteReadHandler;
+    private ProtocolPipelineFactory protocolPipelineFactory;
 
     private Channel remoteChannel;
 
@@ -46,19 +40,20 @@ public class TCPForWardContext implements VComponent {
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    public TCPForWardContext(Mapping mapping, ByteReadHandler byteReadHandler) {
+    public TCPForWardContext(Mapping mapping, ConnectionContext connectionContext, ProtocolBridge protocolBridge,
+                             ProtocolPipelineFactory protocolPipelineFactory) {
         this.mapping = mapping;
+        this.connectionContext = connectionContext;
         this.forwardHost = mapping.getForwardHost();
         this.forwardPort = mapping.getForwardPort();
-        this.byteReadHandler = byteReadHandler;
+        this.protocolBridge = protocolBridge;
+        this.protocolPipelineFactory = protocolPipelineFactory;
     }
 
-    public TCPForWardContext(long mappingId, Mapping mapping, ConnectionContext connectionContext, PacketCaptureService packetCaptureService,
-                             ByteReadHandler byteReadHandler, EventLoopGroup eventLoopGroup, Consumer<String> closeCallback) {
-        this(mapping, byteReadHandler);
-        this.mappingId = mappingId;
-        this.connectionContext = connectionContext;
-        this.packetCaptureService = packetCaptureService;
+    public TCPForWardContext(Mapping mapping, ConnectionContext connectionContext, ProtocolBridge protocolBridge,
+                             ProtocolPipelineFactory protocolPipelineFactory, EventLoopGroup eventLoopGroup,
+                             Consumer<String> closeCallback) {
+        this(mapping, connectionContext, protocolBridge, protocolPipelineFactory);
         this.eventLoopGroup = eventLoopGroup;
         this.ownEventLoopGroup = false;
         this.closeCallback = closeCallback;
@@ -67,29 +62,10 @@ public class TCPForWardContext implements VComponent {
     @Override
     public void start() {
         Bootstrap b = new Bootstrap();
-        String printPrefix = ByteReadHandler.REMOTE_TAG + forwardHost + ":" + forwardPort;
-        forwardByteReadHandler = new ByteReadHandler(printPrefix, (bytes) -> {
-            if (bytes == null) {
-                log.warn(printPrefix + "数据为空");
-                return;
-            }
-
-            //打印部分逻辑
-            Boolean printResponse = mapping.getConsole().getPrintResponse();
-            if (Boolean.TRUE.equals(printResponse)) {
-                log.info(printPrefix + ":\n{}", new String(bytes));
-            } else {
-                        log.warn("收到响应，但未配置打印，修改配置中的printResponse为true");
-                    }
-
-            captureResponse(bytes);
-        });
-
         ChannelInitializer channelInitializer = new ChannelInitializer() {
             @Override
             protected void initChannel(Channel channel) throws Exception {
-                ChannelPipeline pipeline = channel.pipeline();
-                pipeline.addLast(ByteReadHandler.NAME, forwardByteReadHandler);
+                protocolPipelineFactory.initForwardPipeline(channel, mapping, connectionContext, protocolBridge);
             }
         };
 
@@ -109,8 +85,7 @@ public class TCPForWardContext implements VComponent {
                 return;
             }
             remoteChannel = connect.channel();
-            forwardByteReadHandler.setTarget(byteReadHandler);
-            byteReadHandler.setTarget(forwardByteReadHandler);
+            protocolBridge.onForwardChannelActive(remoteChannel);
             remoteChannel.closeFuture().addListener(x -> closeWithReason("REMOTE_CLOSED"));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -138,12 +113,6 @@ public class TCPForWardContext implements VComponent {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        if (forwardByteReadHandler != null && !forwardByteReadHandler.hasClosed()) {
-            forwardByteReadHandler.closeSwap();
-        }
-        if (byteReadHandler != null && !byteReadHandler.hasClosed()) {
-            byteReadHandler.closeSwap();
-        }
         if (remoteChannel != null && remoteChannel.isOpen()) {
             remoteChannel.close();
         }
@@ -158,47 +127,6 @@ public class TCPForWardContext implements VComponent {
         if (ownEventLoopGroup && eventLoopGroup != null) {
             eventLoopGroup.shutdownGracefully();
         }
-    }
-
-    private void captureResponse(byte[] bytes) {
-        if (packetCaptureService == null || connectionContext == null) {
-            return;
-        }
-        PacketEvent event = new PacketEvent();
-        event.setMappingId(mappingId);
-        event.setConnectionId(connectionContext.getConnectionId());
-        event.setDirection(PacketDirection.RESPONSE);
-        event.setSequenceNo(connectionContext.nextSequenceNo());
-        event.setReceivedAt(java.time.Instant.now().toString());
-        event.setClientIp(connectionContext.getClientIp());
-        event.setClientPort(connectionContext.getClientPort());
-        InetSocketAddress listenAddress = toInetSocketAddress(connectionContext.getLocalChannel().localAddress());
-        event.setListenIp(host(listenAddress));
-        event.setListenPort(port(listenAddress));
-        event.setTargetHost(mapping.getForwardHost());
-        event.setTargetPort(mapping.getForwardPort());
-        InetSocketAddress remoteAddress = remoteChannel == null ? null : toInetSocketAddress(remoteChannel.remoteAddress());
-        event.setRemoteIp(host(remoteAddress));
-        event.setRemotePort(port(remoteAddress));
-        packetCaptureService.capture(event, bytes);
-    }
-
-    private InetSocketAddress toInetSocketAddress(SocketAddress socketAddress) {
-        if (socketAddress instanceof InetSocketAddress) {
-            return (InetSocketAddress) socketAddress;
-        }
-        return null;
-    }
-
-    private String host(InetSocketAddress socketAddress) {
-        if (socketAddress == null) {
-            return null;
-        }
-        return socketAddress.getAddress() == null ? socketAddress.getHostString() : socketAddress.getAddress().getHostAddress();
-    }
-
-    private int port(InetSocketAddress socketAddress) {
-        return socketAddress == null ? -1 : socketAddress.getPort();
     }
 
 }

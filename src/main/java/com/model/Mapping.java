@@ -21,6 +21,12 @@ public class Mapping {
 
     private DumpConfig dump;
 
+    private EndpointConfig listen;
+
+    private EndpointConfig forward;
+
+    private HttpProxyConfig http;
+
     public Boolean getEnable() {
         return enable;
     }
@@ -77,6 +83,41 @@ public class Mapping {
         this.dump = dump;
     }
 
+    public EndpointConfig getListen() {
+        return listen;
+    }
+
+    public void setListen(EndpointConfig listen) {
+        this.listen = listen;
+        if (listen != null && listen.getPort() != null) {
+            this.listenPort = listen.getPort();
+        }
+    }
+
+    public EndpointConfig getForward() {
+        return forward;
+    }
+
+    public void setForward(EndpointConfig forward) {
+        this.forward = forward;
+        if (forward != null) {
+            if (forward.getHost() != null) {
+                this.forwardHost = forward.getHost();
+            }
+            if (forward.getPort() != null) {
+                this.forwardPort = forward.getPort();
+            }
+        }
+    }
+
+    public HttpProxyConfig getHttp() {
+        return http;
+    }
+
+    public void setHttp(HttpProxyConfig http) {
+        this.http = http;
+    }
+
     public static Mapping createDefaultMapping() {
         Mapping mapping = new Mapping();
         mapping.setName("mapping-" + UUID.randomUUID());
@@ -88,6 +129,9 @@ public class Mapping {
         defaultDumpConfig.setEnable(false);
         defaultDumpConfig.setDumpPath("/tmp/j_magnifier");
         mapping.setDump(defaultDumpConfig);
+        mapping.setListen(new EndpointConfig());
+        mapping.setForward(new EndpointConfig());
+        mapping.setHttp(new HttpProxyConfig());
         return mapping;
     }
 
@@ -119,6 +163,32 @@ public class Mapping {
                 dump.setDumpPath(defaultMapping.getDump().getDumpPath());
             }
         }
+        if (listen == null) {
+            listen = defaultMapping.getListen();
+        }
+        if (forward == null) {
+            forward = defaultMapping.getForward();
+        }
+        if (http == null) {
+            http = defaultMapping.getHttp();
+        }
+        listen.applyDefaults();
+        forward.applyDefaults();
+        http.applyDefaults();
+
+        if (listen.getPort() == null) {
+            listen.setPort(listenPort);
+        }
+        if (forward.getPort() == null) {
+            forward.setPort(forwardPort);
+        }
+        if (isBlank(forward.getHost())) {
+            forward.setHost(forwardHost);
+        }
+
+        listenPort = listen.getPort() == null ? 0 : listen.getPort();
+        forwardPort = forward.getPort() == null ? 0 : forward.getPort();
+        forwardHost = forward.getHost();
     }
 
     public String format() {
@@ -128,6 +198,51 @@ public class Mapping {
     public String dumpName() {
         LocalDate now = LocalDate.now();
         return getName() + "_" + now.format(DATE_TIME_FORMATTER) + ".log";
+    }
+
+    public boolean isRawTcpPath() {
+        return isProtocol(listen, "tcp")
+                && isProtocol(forward, "tcp")
+                && !isTlsEnabled(listen)
+                && !isTlsEnabled(forward);
+    }
+
+    public boolean isHttpPath() {
+        return isProtocol(listen, "http") || isProtocol(forward, "http");
+    }
+
+    public String getListenMode() {
+        return modeOf(listen);
+    }
+
+    public String getForwardMode() {
+        return modeOf(forward);
+    }
+
+    private String modeOf(EndpointConfig endpointConfig) {
+        if (endpointConfig == null) {
+            return "tcp";
+        }
+        if (isProtocol(endpointConfig, "http")) {
+            return isTlsEnabled(endpointConfig) ? "https" : "http";
+        }
+        return isTlsEnabled(endpointConfig) ? "tls" : "tcp";
+    }
+
+    private boolean isProtocol(EndpointConfig endpointConfig, String protocol) {
+        return endpointConfig != null
+                && endpointConfig.getApplicationProtocol() != null
+                && protocol.equalsIgnoreCase(endpointConfig.getApplicationProtocol());
+    }
+
+    private boolean isTlsEnabled(EndpointConfig endpointConfig) {
+        return endpointConfig != null
+                && endpointConfig.getTls() != null
+                && Boolean.TRUE.equals(endpointConfig.getTls().getEnabled());
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().length() == 0;
     }
 
 }
