@@ -2,6 +2,13 @@ store:
   sqlitePath: "./data/jmagnifier.db"
   spillDir: "./data/spill"
 
+capture:
+  enabled: true
+  maxCaptureBytes: 4096
+  queueCapacity: 10000
+  batchSize: 100
+  flushIntervalMillis: 200
+
 mappings:
   - name: 'r1'
     enable: true

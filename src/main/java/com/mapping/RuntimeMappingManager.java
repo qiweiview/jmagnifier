@@ -1,5 +1,6 @@
 package com.mapping;
 
+import com.capture.PacketCaptureService;
 import com.core.DataReceiver;
 import com.model.Mapping;
 import com.runtime.NettyGroups;
@@ -25,6 +26,8 @@ public class RuntimeMappingManager {
 
     private final ConnectionRepository connectionRepository;
 
+    private final PacketCaptureService packetCaptureService;
+
     private final AtomicLong mappingIdGenerator = new AtomicLong(1);
 
     private final Map<Long, MappingRuntime> runtimes = new ConcurrentHashMap<>();
@@ -32,13 +35,15 @@ public class RuntimeMappingManager {
     private final Object mappingMutationLock = new Object();
 
     public RuntimeMappingManager(NettyGroups nettyGroups) {
-        this(nettyGroups, null, null);
+        this(nettyGroups, null, null, null);
     }
 
-    public RuntimeMappingManager(NettyGroups nettyGroups, MappingRepository mappingRepository, ConnectionRepository connectionRepository) {
+    public RuntimeMappingManager(NettyGroups nettyGroups, MappingRepository mappingRepository, ConnectionRepository connectionRepository,
+                                 PacketCaptureService packetCaptureService) {
         this.nettyGroups = nettyGroups;
         this.mappingRepository = mappingRepository;
         this.connectionRepository = connectionRepository;
+        this.packetCaptureService = packetCaptureService;
     }
 
     public List<MappingRuntime> startAll(List<Mapping> mappings) {
@@ -145,7 +150,8 @@ public class RuntimeMappingManager {
                 nettyGroups.getTcpBossGroup(),
                 nettyGroups.getTcpWorkerGroup(),
                 nettyGroups.getTcpClientGroup(),
-                connectionRepository);
+                connectionRepository,
+                packetCaptureService);
         runtime.setDataReceiver(dataReceiver);
         try {
             dataReceiver.start();

@@ -35,6 +35,8 @@ public class ConnectionContext {
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
+    private final AtomicLong sequence = new AtomicLong(0);
+
     public ConnectionContext(long mappingId, Mapping mappingSnapshot, Channel localChannel) {
         this(mappingId, ID_GENERATOR.getAndIncrement(), mappingSnapshot, localChannel);
     }
@@ -98,6 +100,10 @@ public class ConnectionContext {
 
     public void setForwardContext(TCPForWardContext forwardContext) {
         this.forwardContext = forwardContext;
+    }
+
+    public long nextSequenceNo() {
+        return sequence.incrementAndGet();
     }
 
     public boolean close(String reason) {

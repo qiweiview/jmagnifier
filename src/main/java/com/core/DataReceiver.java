@@ -1,6 +1,8 @@
 package com.core;
 
-import com.model.DumpConfig;
+import com.capture.PacketCaptureService;
+import com.capture.PacketDirection;
+import com.capture.PacketEvent;
 import com.model.Mapping;
 import com.store.ConnectionRepository;
 import com.util.NettyComponentConfig;
@@ -8,11 +10,9 @@ import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FileUtils;
 
-import java.io.File;
-import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Set;
@@ -48,19 +48,23 @@ public class DataReceiver implements VComponent {
 
     private ConnectionRepository connectionRepository;
 
+    private PacketCaptureService packetCaptureService;
+
 
     public DataReceiver(Mapping mapping) {
         this.listenPort = mapping.getListenPort();
         this.mapping = mapping;
     }
 
-    public DataReceiver(long mappingId, Mapping mapping, EventLoopGroup bossGroup, EventLoopGroup workerGroup, EventLoopGroup clientGroup, ConnectionRepository connectionRepository) {
+    public DataReceiver(long mappingId, Mapping mapping, EventLoopGroup bossGroup, EventLoopGroup workerGroup, EventLoopGroup clientGroup,
+                        ConnectionRepository connectionRepository, PacketCaptureService packetCaptureService) {
         this(mapping);
         this.mappingId = mappingId;
         this.bossGroup = bossGroup;
         this.workerGroup = workerGroup;
         this.clientGroup = clientGroup;
         this.connectionRepository = connectionRepository;
+        this.packetCaptureService = packetCaptureService;
         this.ownEventLoopGroups = false;
     }
 
@@ -98,26 +102,13 @@ public class DataReceiver implements VComponent {
                         log.warn("收到请求，但未配置打印，修改配置中的printRequest为true");
                     }
 
-
-                    //dump部分逻辑
-                    DumpConfig dumpConfig = mapping.getDump();
-                    if (Boolean.TRUE.equals(dumpConfig.getEnable())) {
-                        String dumpPath = dumpConfig.getDumpPath();
-
-                        String file = dumpPath + File.separator + mapping.dumpName();
-                        try {
-                            FileUtils.writeStringToFile(new File(file), printPrefix + ":\n", true);
-                            FileUtils.writeByteArrayToFile(new File(file), bytes, true);
-                        } catch (IOException e) {
-                            log.warn("dump数据写入失败:{}", e.getMessage());
-                        }
-                    }
+                    captureRequest(connectionContext, bytes);
                 });
                 ChannelPipeline pipeline = channel.pipeline();
                 pipeline.addLast(ByteReadHandler.NAME, byteReadHandler);
 
                 //连接器
-                TCPForWardContext forWardContext = new TCPForWardContext(mapping, byteReadHandler, clientGroup,
+                TCPForWardContext forWardContext = new TCPForWardContext(mappingId, mapping, connectionContext, packetCaptureService, byteReadHandler, clientGroup,
                         reason -> closeConnection(connectionContext, reason));
                 connectionContext.setForwardContext(forWardContext);
                 channel.closeFuture().addListener(x -> closeConnection(connectionContext, "LOCAL_CLOSED"));
@@ -187,6 +178,44 @@ public class DataReceiver implements VComponent {
                 connectionRepository.closeConnection(connectionContext.getConnectionId(), status, reason, null);
             }
         }
+    }
+
+    private void captureRequest(ConnectionContext connectionContext, byte[] bytes) {
+        if (packetCaptureService == null || connectionContext == null) {
+            return;
+        }
+        PacketEvent event = new PacketEvent();
+        event.setMappingId(mappingId);
+        event.setConnectionId(connectionContext.getConnectionId());
+        event.setDirection(PacketDirection.REQUEST);
+        event.setSequenceNo(connectionContext.nextSequenceNo());
+        event.setReceivedAt(java.time.Instant.now().toString());
+        event.setClientIp(connectionContext.getClientIp());
+        event.setClientPort(connectionContext.getClientPort());
+        InetSocketAddress listenAddress = toInetSocketAddress(connectionContext.getLocalChannel().localAddress());
+        event.setListenIp(host(listenAddress));
+        event.setListenPort(port(listenAddress));
+        event.setTargetHost(mapping.getForwardHost());
+        event.setTargetPort(mapping.getForwardPort());
+        packetCaptureService.capture(event, bytes);
+    }
+
+    private InetSocketAddress toInetSocketAddress(SocketAddress socketAddress) {
+        if (socketAddress instanceof InetSocketAddress) {
+            return (InetSocketAddress) socketAddress;
+        }
+        return null;
+    }
+
+    private String host(InetSocketAddress socketAddress) {
+        if (socketAddress == null) {
+            return null;
+        }
+        return socketAddress.getAddress() == null ? socketAddress.getHostString() : socketAddress.getAddress().getHostAddress();
+    }
+
+    private int port(InetSocketAddress socketAddress) {
+        return socketAddress == null ? -1 : socketAddress.getPort();
     }
 
     @Override
