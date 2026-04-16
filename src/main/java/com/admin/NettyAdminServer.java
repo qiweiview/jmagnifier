@@ -24,6 +24,9 @@ import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -103,8 +106,7 @@ public class NettyAdminServer {
         private final AdminRouter authenticatedRouter = new AdminRouter();
 
         private AdminHandler() {
-            publicRouter.add(HttpMethod.GET, "/login", (request, params) ->
-                    JsonResponse.text(HttpResponseStatus.OK, "<!doctype html><title>jmagnifier login</title>", "text/html"));
+            publicRouter.add(HttpMethod.GET, "/login", (request, params) -> classpathResource("admin/login.html"));
             publicRouter.add(HttpMethod.POST, "/api/login", (request, params) -> login(request));
 
             authenticatedRouter.add(HttpMethod.POST, "/api/logout", (request, params) -> logout(request));
@@ -135,8 +137,10 @@ public class NettyAdminServer {
                     packetDetail(requiredId(params, "id")));
             authenticatedRouter.add(HttpMethod.GET, "/api/packets/{id}/payload", (request, params) ->
                     packetPayload(requiredId(params, "id")));
-            authenticatedRouter.add(HttpMethod.GET, "/", (request, params) ->
-                    JsonResponse.text(HttpResponseStatus.OK, "jmagnifier admin API", "text/plain"));
+            authenticatedRouter.add(HttpMethod.GET, "/", (request, params) -> classpathResource("admin/index.html"));
+            authenticatedRouter.add(HttpMethod.GET, "/mappings", (request, params) -> classpathResource("admin/index.html"));
+            authenticatedRouter.add(HttpMethod.GET, "/connections", (request, params) -> classpathResource("admin/index.html"));
+            authenticatedRouter.add(HttpMethod.GET, "/packets", (request, params) -> classpathResource("admin/index.html"));
         }
 
         @Override
@@ -159,6 +163,9 @@ public class NettyAdminServer {
         private FullHttpResponse route(FullHttpRequest request) {
             QueryStringDecoder decoder = new QueryStringDecoder(request.uri());
             String path = decoder.path();
+            if (HttpMethod.GET.equals(request.method()) && path.startsWith("/assets/")) {
+                return classpathResource("admin" + path);
+            }
             FullHttpResponse publicResponse = publicRouter.route(request);
             if (publicResponse != null) {
                 return publicResponse;
@@ -181,6 +188,55 @@ public class NettyAdminServer {
                 return response;
             }
             return JsonResponse.error(HttpResponseStatus.NOT_FOUND, "NOT_FOUND", "route not found");
+        }
+
+        private FullHttpResponse classpathResource(String resourcePath) {
+            String normalized = resourcePath.replace('\\', '/');
+            if (normalized.contains("..") || normalized.startsWith("/")) {
+                return JsonResponse.error(HttpResponseStatus.BAD_REQUEST, "BAD_REQUEST", "invalid resource path");
+            }
+            try (InputStream inputStream = NettyAdminServer.class.getClassLoader().getResourceAsStream(normalized)) {
+                if (inputStream == null) {
+                    return JsonResponse.error(HttpResponseStatus.NOT_FOUND, "NOT_FOUND", "resource not found");
+                }
+                byte[] bytes = readAll(inputStream);
+                FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
+                        HttpResponseStatus.OK, Unpooled.wrappedBuffer(bytes));
+                response.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType(normalized));
+                response.headers().set(HttpHeaderNames.CONTENT_LENGTH, bytes.length);
+                return response;
+            } catch (IOException e) {
+                return JsonResponse.error(HttpResponseStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "read resource failed");
+            }
+        }
+
+        private byte[] readAll(InputStream inputStream) throws IOException {
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = inputStream.read(buffer)) >= 0) {
+                outputStream.write(buffer, 0, read);
+            }
+            return outputStream.toByteArray();
+        }
+
+        private String contentType(String resourcePath) {
+            if (resourcePath.endsWith(".html")) {
+                return "text/html; charset=utf-8";
+            }
+            if (resourcePath.endsWith(".css")) {
+                return "text/css; charset=utf-8";
+            }
+            if (resourcePath.endsWith(".js")) {
+                return "application/javascript; charset=utf-8";
+            }
+            if (resourcePath.endsWith(".svg")) {
+                return "image/svg+xml";
+            }
+            if (resourcePath.endsWith(".png")) {
+                return "image/png";
+            }
+            return "application/octet-stream";
         }
 
         private FullHttpResponse login(FullHttpRequest request) {

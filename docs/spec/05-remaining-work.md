@@ -10,6 +10,7 @@
 - 阶段 3：异步 packet capture、截断、SQLite writer 已完成。
 - 阶段 4：队列满 spill 到磁盘和回放已完成。
 - 阶段 5 子集：Netty admin server、登录/session、mapping API、`/api/runtime`、connection 查询 API、packet 查询 API、payload 下载、API 错误码和轻量 router 已完成。
+- 阶段 6：静态资源服务、登录页、Runtime Summary、Mapping 管理页、Connection / Packet 页面已完成。
 
 ## 范围约束
 
@@ -152,6 +153,8 @@ GET /api/packets/{id}/payload
 
 ### 2.1 静态资源服务
 
+状态：已完成。
+
 任务：
 
 - 实现 `/assets/*` 静态资源处理。
@@ -171,6 +174,8 @@ GET /api/packets/{id}/payload
 
 ### 2.2 登录页
 
+状态：已完成。
+
 任务：
 
 - 新增 `/login` 页面。
@@ -189,6 +194,8 @@ GET /api/packets/{id}/payload
 - 登录后刷新页面仍保持 session。
 
 ### 2.3 首页 Runtime Summary
+
+状态：已完成。
 
 任务：
 
@@ -212,6 +219,8 @@ GET /api/packets/{id}/payload
 
 ### 2.4 Mapping 管理页面
 
+状态：已完成。
+
 任务：
 
 - 列表展示所有 mapping 和 runtime 状态。
@@ -232,6 +241,8 @@ GET /api/packets/{id}/payload
 - 修改 running mapping 后旧端口释放，新端口生效。
 
 ### 2.5 Connection 和 Packet 页面
+
+状态：已完成。
 
 任务：
 
@@ -386,20 +397,16 @@ DELETE /api/mappings/{id}/packets
 
 ## 推荐剩余开发顺序
 
-1. 完成阶段 6 Web UI。
-2. 补 runtime 关闭原因和端口错误分类。
-3. 补 packet 清理 API。
-4. 添加 Maven Wrapper。
-5. 增加单元测试和集成测试。
-6. 更新 README。
+1. 补 runtime 关闭原因和端口错误分类。
+2. 补 packet 清理 API。
+3. 添加 Maven Wrapper。
+4. 增加单元测试和集成测试。
+5. 更新 README。
 
 ## 最小可交付剩余清单
 
 最小可交付还缺：
 
-- Web 登录页。
-- Web mapping 管理页。
-- Web packet 查看页。
 - README 更新。
 
 可继续暂缓：
