@@ -29,7 +29,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class NettyAdminServer {
@@ -102,6 +101,8 @@ public class NettyAdminServer {
     private class AdminHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
 
         private final ObjectMapper objectMapper = new ObjectMapper();
+
+        private final PacketPayloadViewBuilder payloadViewBuilder = new PacketPayloadViewBuilder(PREVIEW_BYTES);
 
         private final AdminRouter publicRouter = new AdminRouter();
 
@@ -521,15 +522,16 @@ public class NettyAdminServer {
 
         private Map<String, Object> toPacketDetail(PacketRepository.PacketRecord record) {
             Map<String, Object> data = toPacketSummary(record);
-            byte[] payload = record.payload == null ? new byte[0] : record.payload;
+            PacketPayloadViewBuilder.PacketPayloadView payloadView = payloadViewBuilder.build(record);
             data.put("listenIp", record.listenIp);
             data.put("listenPort", record.listenPort);
             data.put("remoteIp", record.remoteIp);
             data.put("remotePort", record.remotePort);
-            data.put("hexPreview", hexPreview(payload));
-            data.put("textPreview", textPreview(payload));
-            data.put("previewBytes", Math.min(payload.length, PREVIEW_BYTES));
-            data.put("previewTruncated", payload.length > PREVIEW_BYTES);
+            data.put("payloadView", payloadView);
+            data.put("hexPreview", payloadView.hex);
+            data.put("textPreview", payloadView.textRaw);
+            data.put("previewBytes", payloadView.previewBytes);
+            data.put("previewTruncated", payloadView.previewTruncated);
             return data;
         }
 
@@ -540,54 +542,6 @@ public class NettyAdminServer {
             data.put("pageSize", pageSize);
             data.put("total", total);
             return data;
-        }
-
-        private String hexPreview(byte[] payload) {
-            StringBuilder builder = new StringBuilder();
-            int length = Math.min(payload.length, PREVIEW_BYTES);
-            for (int i = 0; i < length; i++) {
-                if (i > 0) {
-                    builder.append(i % 16 == 0 ? '\n' : ' ');
-                }
-                int value = payload[i] & 0xff;
-                if (value < 16) {
-                    builder.append('0');
-                }
-                builder.append(Integer.toHexString(value).toUpperCase(Locale.ROOT));
-            }
-            return builder.toString();
-        }
-
-        private String textPreview(byte[] payload) {
-            int length = Math.min(payload.length, PREVIEW_BYTES);
-            String text = new String(Arrays.copyOf(payload, length), StandardCharsets.UTF_8);
-            StringBuilder normalized = new StringBuilder(text.length());
-            for (int i = 0; i < text.length(); i++) {
-                char value = text.charAt(i);
-                normalized.append(Character.isISOControl(value) ? '.' : value);
-            }
-            return htmlEscape(normalized.toString());
-        }
-
-        private String htmlEscape(String text) {
-            StringBuilder escaped = new StringBuilder(text.length());
-            for (int i = 0; i < text.length(); i++) {
-                char value = text.charAt(i);
-                if (value == '&') {
-                    escaped.append("&amp;");
-                } else if (value == '<') {
-                    escaped.append("&lt;");
-                } else if (value == '>') {
-                    escaped.append("&gt;");
-                } else if (value == '"') {
-                    escaped.append("&quot;");
-                } else if (value == '\'') {
-                    escaped.append("&#39;");
-                } else {
-                    escaped.append(value);
-                }
-            }
-            return escaped.toString();
         }
 
         private long requiredId(Map<String, String> params, String name) {

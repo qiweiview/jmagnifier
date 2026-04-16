@@ -9,10 +9,12 @@
   var topbarKicker = document.getElementById('topbar-kicker');
   var topbarTitle = document.getElementById('topbar-title');
   var refreshTimer = null;
+  var packetFeedbackTimer = null;
   var state = {
     mappings: [],
     connectionPage: 1,
-    packetPage: 1
+    packetPage: 1,
+    packetDetail: null
   };
   var ROUTE_META = {
     '/': { kicker: '控制台', title: '运行状态' },
@@ -76,13 +78,15 @@
   }
 
   function translateProtocol(protocol) {
+    var normalized = String(protocol || '').toLowerCase();
     var labels = {
       tcp: 'TCP',
       http: 'HTTP',
+      http1: 'HTTP/1.1',
       https: 'HTTPS',
       tls: 'TLS'
     };
-    return labels[protocol] || protocol || '-';
+    return labels[normalized] || protocol || '-';
   }
 
   function translateBoolean(value) {
@@ -515,6 +519,12 @@
   }
 
   function showConnectionDetail(data) {
+    if (packetFeedbackTimer) {
+      window.clearTimeout(packetFeedbackTimer);
+      packetFeedbackTimer = null;
+    }
+    modal.classList.remove('modal-packet-detail');
+    state.packetDetail = null;
     modalTitle.textContent = '连接 #' + data.id;
     modalBody.innerHTML = detailGrid(data, ['mappingId', 'clientIp', 'clientPort', 'listenIp', 'listenPort', 'forwardHost', 'forwardPort', 'remoteIp', 'remotePort', 'status', 'closeReason', 'openedAt', 'closedAt', 'bytesUp', 'bytesDown', 'errorMessage']) +
       '<div class="panel-body"><h3>最近报文</h3><div class="table-wrap"><table><thead><tr><th>ID</th><th>方向</th><th>大小</th><th>捕获大小</th><th>接收时间</th></tr></thead><tbody>' +
@@ -597,12 +607,15 @@
   }
 
   function showPacketDetail(data) {
-    modalTitle.textContent = '报文 #' + data.id;
-    modalBody.innerHTML = detailGrid(data, ['mappingId', 'connectionId', 'direction', 'sequenceNo', 'protocolFamily', 'applicationProtocol', 'contentType', 'httpMethod', 'httpUri', 'httpStatus', 'clientIp', 'clientPort', 'listenIp', 'listenPort', 'targetHost', 'targetPort', 'remoteIp', 'remotePort', 'payloadSize', 'capturedSize', 'truncated', 'receivedAt']) +
-      '<div class="panel-body"><a class="download-link" href="/api/packets/' + data.id + '/payload">下载负载</a></div>' +
-      '<div class="preview-grid"><div><h3>文本</h3><div class="preview-box"><pre id="text-preview"></pre></div></div><div><h3>十六进制</h3><div class="preview-box"><pre>' + escapeHtml(data.hexPreview || '') + '</pre></div></div></div>';
+    state.packetDetail = {
+      data: data,
+      primaryTab: 'text',
+      textTab: 'raw',
+      feedback: null
+    };
+    modal.classList.add('modal-packet-detail');
     openModal();
-    document.getElementById('text-preview').textContent = decodeEscaped(data.textPreview || '');
+    renderPacketDetailModal();
   }
 
   function packetSummary(item) {
@@ -631,8 +644,316 @@
     return node ? node.value.trim() : '';
   }
 
-  function detailGrid(data, keys) {
-    return '<div class="detail-grid">' + keys.map(function (key) {
+  function renderPacketDetailModal() {
+    if (!state.packetDetail) {
+      return;
+    }
+    var detail = state.packetDetail;
+    var data = detail.data;
+    var http = packetHttpView(data);
+    if (!packetJsonTabVisible(data)) {
+      detail.textTab = 'raw';
+    }
+    modalTitle.textContent = '报文 #' + data.id;
+    modalBody.innerHTML =
+      '<div class="packet-detail-shell">' +
+      renderPacketSummary(data) +
+      '<section class="packet-content-section">' +
+      renderPacketToolbar(data, detail) +
+      renderPacketNotices(data, detail) +
+      '<div class="preview-box preview-box-single"><pre id="packet-preview-content"></pre></div>' +
+      (http && http.startLine ? '<div class="preview-meta">HTTP Start Line: ' + escapeHtml(http.startLine) + '</div>' : '') +
+      '</section>' +
+      '</div>';
+    document.getElementById('packet-preview-content').textContent = packetCurrentViewContent(data, detail);
+    bindPacketDetailActions();
+  }
+
+  function renderPacketSummary(data) {
+    return '<section class="packet-summary">' +
+      '<div class="packet-fact-grid">' +
+      packetFact('报文 ID', data.id) +
+      packetFact('方向', translateDirection(data.direction)) +
+      packetFact('协议', packetProtocolLabel(data)) +
+      packetFact('内容类型', data.contentType || '-') +
+      packetFact('HTTP 摘要', packetHttpHeadline(data)) +
+      packetFact('大小', String(data.payloadSize) + ' / ' + String(data.capturedSize)) +
+      packetFact('截断', translateBoolean(data.truncated)) +
+      packetFact('接收时间', data.receivedAt || '-') +
+      '</div>' +
+      '<div class="detail-grid detail-grid-secondary">' +
+      detailItemHtml('映射 / 连接', String(data.mappingId) + ' / ' + String(data.connectionId)) +
+      detailItemHtml('客户端', formatEndpoint(data.clientIp, data.clientPort)) +
+      detailItemHtml('监听', formatEndpoint(data.listenIp, data.listenPort)) +
+      detailItemHtml('目标', formatEndpoint(data.targetHost, data.targetPort)) +
+      detailItemHtml('远端', formatEndpoint(data.remoteIp, data.remotePort)) +
+      detailItemHtml('序号', data.sequenceNo) +
+      '</div>' +
+      '</section>';
+  }
+
+  function renderPacketToolbar(data, detail) {
+    var currentLabel = packetFeedbackLabel(detail, 'current', '复制当前视图');
+    var bodyLabel = packetFeedbackLabel(detail, 'body', '复制请求体');
+    return '<div class="content-toolbar">' +
+      '<div class="tab-switch" role="tablist" aria-label="报文视图">' +
+      tabButton('primary', 'text', '文本', detail.primaryTab === 'text') +
+      tabButton('primary', 'hex', '十六进制', detail.primaryTab === 'hex') +
+      '</div>' +
+      (detail.primaryTab === 'text' && packetJsonTabVisible(data) ? '<div class="sub-tab-switch" role="tablist" aria-label="文本子视图">' +
+        tabButton('text', 'raw', '原文', detail.textTab === 'raw') +
+        tabButton('text', 'json', 'JSON 格式化', detail.textTab === 'json') +
+      '</div>' : '<div class="sub-tab-switch sub-tab-switch-placeholder"></div>') +
+      '<div class="toolbar-spacer"></div>' +
+      '<button class="secondary-button" type="button" data-packet-copy="current">' + escapeHtml(currentLabel) + '</button>' +
+      (packetBodyCopyAvailable(data) ? '<button class="secondary-button" type="button" data-packet-copy="body">' + escapeHtml(bodyLabel) + '</button>' : '') +
+      '<a class="download-link" href="/api/packets/' + data.id + '/payload">下载原始负载</a>' +
+      (detail.feedback ? '<span class="copy-feedback copy-feedback-' + escapeHtml(detail.feedback.status) + '">' + escapeHtml(detail.feedback.message) + '</span>' : '') +
+      '</div>';
+  }
+
+  function renderPacketNotices(data, detail) {
+    var notices = packetNotices(data, detail);
+    if (!notices.length) {
+      return '';
+    }
+    return '<div class="preview-notice-list">' + notices.map(function (notice) {
+      return '<div class="preview-notice">' + escapeHtml(notice) + '</div>';
+    }).join('') + '</div>';
+  }
+
+  function bindPacketDetailActions() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-packet-tab]'), function (button) {
+      button.addEventListener('click', function () {
+        if (!state.packetDetail) {
+          return;
+        }
+        state.packetDetail.primaryTab = button.getAttribute('data-packet-tab');
+        renderPacketDetailModal();
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-packet-text-tab]'), function (button) {
+      button.addEventListener('click', function () {
+        if (!state.packetDetail) {
+          return;
+        }
+        state.packetDetail.textTab = button.getAttribute('data-packet-text-tab');
+        renderPacketDetailModal();
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-packet-copy]'), function (button) {
+      button.addEventListener('click', function () {
+        copyPacketContent(button.getAttribute('data-packet-copy'));
+      });
+    });
+  }
+
+  function copyPacketContent(target) {
+    if (!state.packetDetail) {
+      return;
+    }
+    var detail = state.packetDetail;
+    var data = detail.data;
+    var content = target === 'body' ? packetBodyContent(data) : packetCurrentViewContent(data, detail);
+    var suffix = packetPreviewTruncated(data) || data.truncated ? '，内容已截断' : '';
+    copyText(content).then(function () {
+      setPacketFeedback(target, 'success', target === 'body' ? '已复制请求体' + suffix : '已复制' + suffix);
+    }).catch(function () {
+      setPacketFeedback(target, 'error', '复制失败，请重试');
+    });
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function () {
+        return fallbackCopy(text);
+      });
+    }
+    return fallbackCopy(text);
+  }
+
+  function fallbackCopy(text) {
+    return new Promise(function (resolve, reject) {
+      var textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', 'readonly');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      try {
+        if (document.execCommand('copy')) {
+          resolve();
+        } else {
+          reject(new Error('copy failed'));
+        }
+      } catch (error) {
+        reject(error);
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    });
+  }
+
+  function setPacketFeedback(target, status, message) {
+    if (!state.packetDetail) {
+      return;
+    }
+    state.packetDetail.feedback = {
+      target: target,
+      status: status,
+      message: message
+    };
+    if (packetFeedbackTimer) {
+      window.clearTimeout(packetFeedbackTimer);
+    }
+    renderPacketDetailModal();
+    packetFeedbackTimer = window.setTimeout(function () {
+      if (!state.packetDetail) {
+        return;
+      }
+      state.packetDetail.feedback = null;
+      renderPacketDetailModal();
+    }, 1600);
+  }
+
+  function packetFeedbackLabel(detail, target, fallback) {
+    if (detail.feedback && detail.feedback.target === target && detail.feedback.status === 'success') {
+      return '已复制';
+    }
+    return fallback;
+  }
+
+  function packetCurrentViewContent(data, detail) {
+    if (detail.primaryTab === 'hex') {
+      return packetHexText(data);
+    }
+    if (detail.textTab === 'json' && packetJsonTabVisible(data)) {
+      return packetHttpView(data).bodyJsonPretty || '';
+    }
+    return packetTextRaw(data);
+  }
+
+  function packetBodyContent(data) {
+    var http = packetHttpView(data);
+    return http && http.bodyDetected ? http.bodyText || '' : '';
+  }
+
+  function packetJsonTabVisible(data) {
+    var http = packetHttpView(data);
+    return !!(http && http.bodyDetected && http.bodyJson && http.bodyJsonPretty && !http.bodyTruncated);
+  }
+
+  function packetBodyCopyAvailable(data) {
+    var http = packetHttpView(data);
+    return !!(http && http.bodyDetected);
+  }
+
+  function packetNotices(data, detail) {
+    var notices = [];
+    var http = packetHttpView(data);
+    if (packetPreviewTruncated(data) || data.truncated) {
+      notices.push('仅展示前 ' + packetPreviewBytes(data) + ' 字节' + (data.truncated ? '，当前报文已截断' : ''));
+    }
+    if (detail.primaryTab === 'text' && detail.textTab === 'json') {
+      if (!http || !http.bodyDetected) {
+        notices.push('未识别到 HTTP Body');
+      } else if (!http.bodyJson) {
+        notices.push('当前内容不是 JSON');
+      } else if (http.bodyTruncated) {
+        notices.push('当前报文已截断，JSON 格式化不可用');
+      } else if (!http.bodyJsonPretty) {
+        notices.push('JSON 解析失败，无法格式化展示');
+      }
+    } else if (detail.primaryTab === 'text' && http && http.isHttp) {
+      if (!http.bodyDetected) {
+        notices.push('未识别到 HTTP Body');
+      } else if (!packetJsonTabVisible(data)) {
+        if (!http.bodyJson) {
+          notices.push('当前内容不是 JSON');
+        } else if (http.bodyTruncated) {
+          notices.push('当前报文已截断，JSON 格式化不可用');
+        } else if (!http.bodyJsonPretty) {
+          notices.push('JSON 解析失败，无法格式化展示');
+        }
+      }
+    }
+    return notices;
+  }
+
+  function packetHttpView(data) {
+    return data && data.payloadView ? data.payloadView.http : null;
+  }
+
+  function packetPreviewBytes(data) {
+    return data && data.payloadView && data.payloadView.previewBytes != null ? data.payloadView.previewBytes : (data.previewBytes || 0);
+  }
+
+  function packetPreviewTruncated(data) {
+    return !!(data && data.payloadView ? data.payloadView.previewTruncated : data.previewTruncated);
+  }
+
+  function packetTextRaw(data) {
+    if (data && data.payloadView && data.payloadView.textRaw != null) {
+      return data.payloadView.textRaw;
+    }
+    return decodeEscaped(data.textPreview || '');
+  }
+
+  function packetHexText(data) {
+    if (data && data.payloadView && data.payloadView.hex != null) {
+      return data.payloadView.hex;
+    }
+    return data.hexPreview || '';
+  }
+
+  function packetProtocolLabel(data) {
+    var values = [];
+    var protocol = translateProtocol(data.protocolFamily);
+    var application = translateProtocol(data.applicationProtocol);
+    if (protocol && protocol !== '-') {
+      values.push(protocol);
+    }
+    if (application && application !== '-' && application !== protocol) {
+      values.push(application);
+    }
+    return values.length ? values.join(' / ') : '-';
+  }
+
+  function packetHttpHeadline(data) {
+    if (data.httpMethod || data.httpUri || data.httpStatus != null) {
+      if (data.direction === 'REQUEST') {
+        return [data.httpMethod || '-', data.httpUri || '-'].join(' ');
+      }
+      return 'HTTP ' + String(data.httpStatus == null ? '-' : data.httpStatus) + (data.httpUri ? ' ' + data.httpUri : '');
+    }
+    return '-';
+  }
+
+  function packetFact(label, value) {
+    return '<div class="packet-fact"><div class="label">' + escapeHtml(label) + '</div><div class="value">' + escapeHtml(value == null || value === '' ? '-' : value) + '</div></div>';
+  }
+
+  function detailItemHtml(label, value) {
+    return '<div class="detail-item"><div class="label">' + escapeHtml(label) + '</div><div class="value">' + escapeHtml(value == null || value === '' ? '-' : value) + '</div></div>';
+  }
+
+  function formatEndpoint(host, port) {
+    if ((host == null || host === '') && (port == null || port === '')) {
+      return '-';
+    }
+    return String(host || '-') + ':' + String(port == null ? '-' : port);
+  }
+
+  function tabButton(group, value, label, active) {
+    var attr = group === 'text' ? 'data-packet-text-tab' : 'data-packet-tab';
+    return '<button class="tab-button' + (active ? ' active' : '') + '" type="button" ' + attr + '="' + escapeHtml(value) + '" role="tab" aria-selected="' + (active ? 'true' : 'false') + '">' + escapeHtml(label) + '</button>';
+  }
+
+  function detailGrid(data, keys, className) {
+    return '<div class="detail-grid' + (className ? ' ' + className : '') + '">' + keys.map(function (key) {
       var value = data[key];
       if (key === 'status') {
         value = translateStatus(value);
@@ -643,7 +964,7 @@
       } else if (key === 'truncated') {
         value = translateBoolean(value);
       }
-      return '<div class="detail-item"><div class="label">' + escapeHtml(translateFieldLabel(key)) + '</div><div class="value">' + escapeHtml(value == null ? '-' : value) + '</div></div>';
+      return detailItemHtml(translateFieldLabel(key), value);
     }).join('') + '</div>';
   }
 
@@ -659,6 +980,12 @@
   }
 
   function closeModal() {
+    if (packetFeedbackTimer) {
+      window.clearTimeout(packetFeedbackTimer);
+      packetFeedbackTimer = null;
+    }
+    state.packetDetail = null;
+    modal.classList.remove('modal-packet-detail');
     document.body.classList.remove('modal-open');
     modal.classList.add('hidden');
     modalTitle.textContent = '';
