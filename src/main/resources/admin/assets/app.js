@@ -10,6 +10,91 @@
     connectionPage: 1,
     packetPage: 1
   };
+  var FIELD_LABELS = {
+    mappingId: '映射 ID',
+    clientIp: '客户端 IP',
+    clientPort: '客户端端口',
+    listenIp: '监听 IP',
+    listenPort: '监听端口',
+    forwardHost: '转发主机',
+    forwardPort: '转发端口',
+    remoteIp: '远端 IP',
+    remotePort: '远端端口',
+    status: '状态',
+    closeReason: '关闭原因',
+    openedAt: '打开时间',
+    closedAt: '关闭时间',
+    bytesUp: '上行字节',
+    bytesDown: '下行字节',
+    errorMessage: '错误信息',
+    direction: '方向',
+    sequenceNo: '序号',
+    protocolFamily: '协议族',
+    applicationProtocol: '应用协议',
+    contentType: '内容类型',
+    httpMethod: 'HTTP 方法',
+    httpUri: 'HTTP 路径',
+    httpStatus: 'HTTP 状态码',
+    targetHost: '目标主机',
+    targetPort: '目标端口',
+    payloadSize: '原始大小',
+    capturedSize: '捕获大小',
+    truncated: '是否截断',
+    receivedAt: '接收时间',
+    connectionId: '连接 ID'
+  };
+
+  function translateStatus(status) {
+    var labels = {
+      RUNNING: '运行中',
+      STOPPED: '已停止',
+      FAILED: '失败',
+      OPENING: '连接中',
+      OPEN: '已连接',
+      CLOSED: '已关闭',
+      ERROR: '错误'
+    };
+    return labels[status] || status || '-';
+  }
+
+  function translateDirection(direction) {
+    var labels = {
+      REQUEST: '请求',
+      RESPONSE: '响应'
+    };
+    return labels[direction] || direction || '-';
+  }
+
+  function translateProtocol(protocol) {
+    var labels = {
+      tcp: 'TCP',
+      http: 'HTTP',
+      https: 'HTTPS',
+      tls: 'TLS'
+    };
+    return labels[protocol] || protocol || '-';
+  }
+
+  function translateBoolean(value) {
+    if (value === true) {
+      return '是';
+    }
+    if (value === false) {
+      return '否';
+    }
+    return value == null ? '-' : value;
+  }
+
+  function translateFieldLabel(key) {
+    return FIELD_LABELS[key] || key;
+  }
+
+  function translateOptionLabel(value) {
+    if (!value) {
+      return '不限';
+    }
+    return translateStatus(value) !== value ? translateStatus(value) : translateDirection(value);
+  }
 
   function api(path, options) {
     var request = options || {};
@@ -20,11 +105,11 @@
     return fetch(path, request).then(function (response) {
       if (response.status === 401) {
         window.location.href = '/login';
-        return Promise.reject(new Error('login required'));
+        return Promise.reject(new Error('请先登录'));
       }
       return response.json().then(function (body) {
         if (!body.success) {
-          var message = body.error && body.error.message ? body.error.message : 'request failed';
+          var message = body.error && body.error.message ? body.error.message : '请求失败';
           var error = new Error(message);
           error.code = body.error && body.error.code;
           throw error;
@@ -70,7 +155,7 @@
 
   function statusBadge(status) {
     var value = String(status || '').toLowerCase();
-    return '<span class="status ' + escapeHtml(value) + '">' + escapeHtml(status || '-') + '</span>';
+    return '<span class="status ' + escapeHtml(value) + '">' + escapeHtml(translateStatus(status)) + '</span>';
   }
 
   function metric(label, value) {
@@ -83,25 +168,25 @@
 
   function renderRuntime() {
     clearTimer();
-    view.innerHTML = pageHead('Runtime', 'Live process and capture counters') + '<div id="runtime-metrics" class="grid metrics"></div>';
+    view.innerHTML = pageHead('运行状态', '进程实时状态与抓包统计') + '<div id="runtime-metrics" class="grid metrics"></div>';
     function load() {
       api('/api/runtime').then(function (data) {
         document.getElementById('runtime-metrics').innerHTML = [
-          metric('Mappings', data.mappings),
-          metric('Running', data.runningMappings),
-          metric('Stopped', data.stoppedMappings),
-          metric('Failed', data.failedMappings),
-          metric('Active connections', data.activeConnections),
-          metric('Capture queue', data.captureQueueSize + ' / ' + data.captureQueueCapacity),
-          metric('Spill files', data.spillFileCount),
-          metric('Spill bytes', data.spillBytes),
-          metric('Packets written', data.packetsWritten),
-          metric('Packets spilled', data.packetsSpilled),
-          metric('Packets dropped', data.packetsDropped),
-          metric('Writer error', data.lastWriterError || '-')
+          metric('映射总数', data.mappings),
+          metric('运行中', data.runningMappings),
+          metric('已停止', data.stoppedMappings),
+          metric('失败', data.failedMappings),
+          metric('活跃连接', data.activeConnections),
+          metric('抓包队列', data.captureQueueSize + ' / ' + data.captureQueueCapacity),
+          metric('落盘文件', data.spillFileCount),
+          metric('落盘字节', data.spillBytes),
+          metric('已写入报文', data.packetsWritten),
+          metric('已落盘报文', data.packetsSpilled),
+          metric('已丢弃报文', data.packetsDropped),
+          metric('写入错误', data.lastWriterError || '-')
         ].join('');
       }).catch(function (error) {
-        view.innerHTML = pageHead('Runtime', '') + '<p class="error-text">' + escapeHtml(error.message) + '</p>';
+        view.innerHTML = pageHead('运行状态', '') + '<p class="error-text">' + escapeHtml(error.message) + '</p>';
       });
     }
     load();
@@ -110,39 +195,39 @@
 
   function renderMappings() {
     clearTimer();
-    view.innerHTML = pageHead('Mappings', 'Runtime forwarding rules') +
+    view.innerHTML = pageHead('映射配置', '运行时转发规则管理') +
       '<div class="split">' +
-      '<section class="panel"><div class="panel-head"><h2 id="mapping-form-title">New mapping</h2></div><div class="panel-body">' +
+      '<section class="panel"><div class="panel-head"><h2 id="mapping-form-title">新建映射</h2></div><div class="panel-body">' +
       '<form id="mapping-form" class="form-grid">' +
       '<input type="hidden" id="mapping-id">' +
-      '<div><label>Name</label><input id="mapping-name" required></div>' +
-      '<div><label>Listen port</label><input id="mapping-listen-port" type="number" min="0" max="65535" required></div>' +
-      '<div><label>Listen protocol</label><select id="mapping-listen-protocol"><option value="tcp">tcp</option><option value="http">http</option></select></div>' +
-      '<label class="check-row"><input id="mapping-listen-tls-enabled" type="checkbox"> Listen TLS</label>' +
+      '<div><label>名称</label><input id="mapping-name" required></div>' +
+      '<div><label>监听端口</label><input id="mapping-listen-port" type="number" min="0" max="65535" required></div>' +
+      '<div><label>监听协议</label><select id="mapping-listen-protocol"><option value="tcp">tcp</option><option value="http">http</option></select></div>' +
+      '<label class="check-row"><input id="mapping-listen-tls-enabled" type="checkbox"> 启用监听 TLS</label>' +
       '<div id="mapping-listen-tls-fields">' +
-      '<div><label>Listen cert file</label><input id="mapping-listen-cert-file"></div>' +
-      '<div><label>Listen private key</label><input id="mapping-listen-key-file"></div>' +
-      '<div><label>Listen key password</label><input id="mapping-listen-key-password" type="password"></div>' +
+      '<div><label>监听证书文件</label><input id="mapping-listen-cert-file"></div>' +
+      '<div><label>监听私钥文件</label><input id="mapping-listen-key-file"></div>' +
+      '<div><label>监听私钥密码</label><input id="mapping-listen-key-password" type="password"></div>' +
       '</div>' +
-      '<div><label>Forward host</label><input id="mapping-forward-host" required></div>' +
-      '<div><label>Forward port</label><input id="mapping-forward-port" type="number" min="0" max="65535" required></div>' +
-      '<div><label>Forward protocol</label><select id="mapping-forward-protocol"><option value="tcp">tcp</option><option value="http">http</option></select></div>' +
-      '<label class="check-row"><input id="mapping-forward-tls-enabled" type="checkbox"> Forward TLS</label>' +
+      '<div><label>转发主机</label><input id="mapping-forward-host" required></div>' +
+      '<div><label>转发端口</label><input id="mapping-forward-port" type="number" min="0" max="65535" required></div>' +
+      '<div><label>转发协议</label><select id="mapping-forward-protocol"><option value="tcp">tcp</option><option value="http">http</option></select></div>' +
+      '<label class="check-row"><input id="mapping-forward-tls-enabled" type="checkbox"> 启用转发 TLS</label>' +
       '<div id="mapping-forward-tls-fields">' +
-      '<div><label>Forward SNI host</label><input id="mapping-forward-sni-host"></div>' +
-      '<label class="check-row"><input id="mapping-forward-insecure" type="checkbox"> Insecure skip verify</label>' +
-      '<div><label>Forward trust cert file</label><input id="mapping-forward-trust-cert"></div>' +
+      '<div><label>转发 SNI 主机</label><input id="mapping-forward-sni-host"></div>' +
+      '<label class="check-row"><input id="mapping-forward-insecure" type="checkbox"> 跳过证书校验</label>' +
+      '<div><label>转发信任证书文件</label><input id="mapping-forward-trust-cert"></div>' +
       '</div>' +
       '<div id="mapping-http-fields">' +
-      '<label class="check-row"><input id="mapping-http-rewrite-host" type="checkbox" checked> Rewrite Host</label>' +
-      '<label class="check-row"><input id="mapping-http-add-x-forwarded" type="checkbox" checked> Add X-Forwarded headers</label>' +
-      '<div><label>HTTP max object size</label><input id="mapping-http-max-object-size" type="number" min="1" value="1048576"></div>' +
+      '<label class="check-row"><input id="mapping-http-rewrite-host" type="checkbox" checked> 重写 Host</label>' +
+      '<label class="check-row"><input id="mapping-http-add-x-forwarded" type="checkbox" checked> 添加 X-Forwarded 头</label>' +
+      '<div><label>HTTP 最大对象大小</label><input id="mapping-http-max-object-size" type="number" min="1" value="1048576"></div>' +
       '</div>' +
-      '<label class="check-row"><input id="mapping-enabled" type="checkbox" checked> Enabled</label>' +
-      '<button type="submit">Save</button><button id="mapping-reset" class="secondary-button" type="button">Reset</button>' +
+      '<label class="check-row"><input id="mapping-enabled" type="checkbox" checked> 启用</label>' +
+      '<button type="submit">保存</button><button id="mapping-reset" class="secondary-button" type="button">重置</button>' +
       '<p id="mapping-message" class="form-message"></p>' +
       '</form></div></section>' +
-      '<section class="panel"><div class="panel-head"><h2>Mappings</h2><button id="mapping-refresh" class="compact-button" type="button">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Listen</th><th>Forward</th><th>Status</th><th>Connections</th><th>Last error</th><th></th></tr></thead><tbody id="mapping-rows"></tbody></table></div></section>' +
+      '<section class="panel"><div class="panel-head"><h2>映射列表</h2><button id="mapping-refresh" class="compact-button" type="button">刷新</button></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>名称</th><th>监听</th><th>转发</th><th>状态</th><th>连接数</th><th>最近错误</th><th></th></tr></thead><tbody id="mapping-rows"></tbody></table></div></section>' +
       '</div>';
     document.getElementById('mapping-form').addEventListener('submit', saveMapping);
     document.getElementById('mapping-reset').addEventListener('click', resetMappingForm);
@@ -158,17 +243,17 @@
       document.getElementById('mapping-rows').innerHTML = state.mappings.map(function (item) {
         return '<tr>' +
           '<td>' + item.id + '</td>' +
-          '<td>' + escapeHtml(item.name) + '<div class="muted">' + (item.enabled ? 'enabled' : 'disabled') + '</div></td>' +
-          '<td>' + item.listenPort + '<div class="muted">' + escapeHtml(item.listenMode || 'tcp') + '</div></td>' +
-          '<td>' + escapeHtml(item.forwardHost) + ':' + item.forwardPort + '<div class="muted">' + escapeHtml(item.forwardMode || 'tcp') + '</div></td>' +
+          '<td>' + escapeHtml(item.name) + '<div class="muted">' + (item.enabled ? '已启用' : '已禁用') + '</div></td>' +
+          '<td>' + item.listenPort + '<div class="muted">' + escapeHtml(translateProtocol(item.listenMode || 'tcp')) + '</div></td>' +
+          '<td>' + escapeHtml(item.forwardHost) + ':' + item.forwardPort + '<div class="muted">' + escapeHtml(translateProtocol(item.forwardMode || 'tcp')) + '</div></td>' +
           '<td>' + statusBadge(item.status) + '</td>' +
           '<td>' + item.activeConnections + '</td>' +
           '<td class="error-text">' + escapeHtml(item.lastError || '') + '</td>' +
           '<td class="actions">' +
-          '<button class="compact-button" type="button" data-edit="' + item.id + '">Edit</button>' +
-          '<button class="compact-button" type="button" data-start="' + item.id + '">Start</button>' +
-          '<button class="compact-button" type="button" data-stop="' + item.id + '">Stop</button>' +
-          '<button class="danger-button" type="button" data-delete="' + item.id + '">Delete</button>' +
+          '<button class="compact-button" type="button" data-edit="' + item.id + '">编辑</button>' +
+          '<button class="compact-button" type="button" data-start="' + item.id + '">启动</button>' +
+          '<button class="compact-button" type="button" data-stop="' + item.id + '">停止</button>' +
+          '<button class="danger-button" type="button" data-delete="' + item.id + '">删除</button>' +
           '</td></tr>';
       }).join('');
       bindMappingActions();
@@ -189,7 +274,7 @@
     });
     Array.prototype.forEach.call(document.querySelectorAll('[data-delete]'), function (button) {
       button.addEventListener('click', function () {
-        if (window.confirm('Delete mapping ' + button.getAttribute('data-delete') + '?')) {
+        if (window.confirm('确认删除映射 ' + button.getAttribute('data-delete') + ' 吗？')) {
           api('/api/mappings/' + button.getAttribute('data-delete'), { method: 'DELETE' }).then(loadMappings).catch(function (error) {
             setError('mapping-message', error);
           });
@@ -208,7 +293,7 @@
     var listenTls = listen.tls || {};
     var forwardTls = forward.tls || {};
     var http = item.http || {};
-    document.getElementById('mapping-form-title').textContent = 'Edit mapping #' + id;
+    document.getElementById('mapping-form-title').textContent = '编辑映射 #' + id;
     document.getElementById('mapping-id').value = item.id;
     document.getElementById('mapping-name').value = item.name || '';
     document.getElementById('mapping-listen-port').value = item.listenPort;
@@ -232,7 +317,7 @@
   }
 
   function resetMappingForm() {
-    document.getElementById('mapping-form-title').textContent = 'New mapping';
+    document.getElementById('mapping-form-title').textContent = '新建映射';
     document.getElementById('mapping-form').reset();
     document.getElementById('mapping-id').value = '';
     document.getElementById('mapping-listen-protocol').value = 'tcp';
@@ -322,17 +407,17 @@
 
   function renderConnections() {
     clearTimer();
-    view.innerHTML = pageHead('Connections', 'Stored TCP connection records') +
+    view.innerHTML = pageHead('连接记录', '已保存的 TCP 连接记录') +
       '<section class="panel"><div class="panel-body">' +
       '<div class="toolbar">' +
-      field('connection-mapping-id', 'Mapping ID') +
-      field('connection-client-ip', 'Client IP') +
-      selectField('connection-status', 'Status', ['', 'OPENING', 'OPEN', 'CLOSED', 'FAILED']) +
-      field('connection-from', 'From') +
-      field('connection-to', 'To') +
-      '<button id="connection-search" type="button">Search</button>' +
-      '</div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Mapping</th><th>Client</th><th>Listen</th><th>Target</th><th>Status</th><th>Opened</th><th>Bytes</th><th></th></tr></thead><tbody id="connection-rows"></tbody></table></div>' +
-      '<div class="pager"><button id="connection-prev" class="secondary-button" type="button">Prev</button><span id="connection-page-info"></span><button id="connection-next" class="secondary-button" type="button">Next</button></div>' +
+      field('connection-mapping-id', '映射 ID') +
+      field('connection-client-ip', '客户端 IP') +
+      selectField('connection-status', '状态', ['', 'OPENING', 'OPEN', 'CLOSED', 'FAILED']) +
+      field('connection-from', '开始时间') +
+      field('connection-to', '结束时间') +
+      '<button id="connection-search" type="button">查询</button>' +
+      '</div><div class="table-wrap"><table><thead><tr><th>ID</th><th>映射</th><th>客户端</th><th>监听</th><th>目标</th><th>状态</th><th>打开时间</th><th>字节数</th><th></th></tr></thead><tbody id="connection-rows"></tbody></table></div>' +
+      '<div class="pager"><button id="connection-prev" class="secondary-button" type="button">上一页</button><span id="connection-page-info"></span><button id="connection-next" class="secondary-button" type="button">下一页</button></div>' +
       '<p id="connection-message" class="form-message"></p></div></section>';
     document.getElementById('connection-search').addEventListener('click', function () {
       state.connectionPage = 1;
@@ -369,12 +454,12 @@
           '<td>' + escapeHtml(item.forwardHost) + ':' + item.forwardPort + '</td>' +
           '<td>' + statusBadge(item.status) + '</td>' +
           '<td>' + escapeHtml(item.openedAt) + '</td>' +
-          '<td>' + item.bytesUp + ' up<br>' + item.bytesDown + ' down</td>' +
-          '<td><button class="compact-button" type="button" data-connection-detail="' + item.id + '">Detail</button></td>' +
+          '<td>' + item.bytesUp + ' 上行<br>' + item.bytesDown + ' 下行</td>' +
+          '<td><button class="compact-button" type="button" data-connection-detail="' + item.id + '">详情</button></td>' +
           '</tr>';
       }).join('');
       bindConnectionDetails();
-      document.getElementById('connection-page-info').textContent = 'Page ' + page.page + ' of ' + Math.max(1, Math.ceil(page.total / page.pageSize));
+      document.getElementById('connection-page-info').textContent = '第 ' + page.page + ' 页 / 共 ' + Math.max(1, Math.ceil(page.total / page.pageSize)) + ' 页';
       document.getElementById('connection-prev').disabled = page.page <= 1;
       document.getElementById('connection-next').disabled = page.page * page.pageSize >= page.total;
     }).catch(function (error) {
@@ -393,28 +478,28 @@
   }
 
   function showConnectionDetail(data) {
-    modalTitle.textContent = 'Connection #' + data.id;
+    modalTitle.textContent = '连接 #' + data.id;
     modalBody.innerHTML = detailGrid(data, ['mappingId', 'clientIp', 'clientPort', 'listenIp', 'listenPort', 'forwardHost', 'forwardPort', 'remoteIp', 'remotePort', 'status', 'closeReason', 'openedAt', 'closedAt', 'bytesUp', 'bytesDown', 'errorMessage']) +
-      '<div class="panel-body"><h3>Recent packets</h3><div class="table-wrap"><table><thead><tr><th>ID</th><th>Direction</th><th>Size</th><th>Captured</th><th>Received</th></tr></thead><tbody>' +
+      '<div class="panel-body"><h3>最近报文</h3><div class="table-wrap"><table><thead><tr><th>ID</th><th>方向</th><th>大小</th><th>捕获大小</th><th>接收时间</th></tr></thead><tbody>' +
       (data.recentPackets || []).map(function (packet) {
-        return '<tr><td>' + packet.id + '</td><td>' + escapeHtml(packet.direction) + '</td><td>' + packet.payloadSize + '</td><td>' + packet.capturedSize + '</td><td>' + escapeHtml(packet.receivedAt) + '</td></tr>';
+        return '<tr><td>' + packet.id + '</td><td>' + escapeHtml(translateDirection(packet.direction)) + '</td><td>' + packet.payloadSize + '</td><td>' + packet.capturedSize + '</td><td>' + escapeHtml(packet.receivedAt) + '</td></tr>';
       }).join('') + '</tbody></table></div></div>';
     openModal();
   }
 
   function renderPackets() {
     clearTimer();
-    view.innerHTML = pageHead('Packets', 'Captured payload summaries') +
+    view.innerHTML = pageHead('报文记录', '已捕获报文摘要') +
       '<section class="panel"><div class="panel-body">' +
       '<div class="toolbar">' +
-      field('packet-mapping-id', 'Mapping ID') +
-      field('packet-connection-id', 'Connection ID') +
-      selectField('packet-direction', 'Direction', ['', 'REQUEST', 'RESPONSE']) +
-      field('packet-from', 'From') +
-      field('packet-to', 'To') +
-      '<button id="packet-search" type="button">Search</button>' +
-      '</div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Connection</th><th>Mapping</th><th>Direction</th><th>Client</th><th>Target</th><th>Size</th><th>Received</th><th></th></tr></thead><tbody id="packet-rows"></tbody></table></div>' +
-      '<div class="pager"><button id="packet-prev" class="secondary-button" type="button">Prev</button><span id="packet-page-info"></span><button id="packet-next" class="secondary-button" type="button">Next</button></div>' +
+      field('packet-mapping-id', '映射 ID') +
+      field('packet-connection-id', '连接 ID') +
+      selectField('packet-direction', '方向', ['', 'REQUEST', 'RESPONSE']) +
+      field('packet-from', '开始时间') +
+      field('packet-to', '结束时间') +
+      '<button id="packet-search" type="button">查询</button>' +
+      '</div><div class="table-wrap"><table><thead><tr><th>ID</th><th>连接</th><th>映射</th><th>方向</th><th>客户端</th><th>目标</th><th>大小</th><th>接收时间</th><th></th></tr></thead><tbody id="packet-rows"></tbody></table></div>' +
+      '<div class="pager"><button id="packet-prev" class="secondary-button" type="button">上一页</button><span id="packet-page-info"></span><button id="packet-next" class="secondary-button" type="button">下一页</button></div>' +
       '<p id="packet-message" class="form-message"></p></div></section>';
     document.getElementById('packet-search').addEventListener('click', function () {
       state.packetPage = 1;
@@ -447,16 +532,16 @@
           '<td>' + item.id + '</td>' +
           '<td>' + item.connectionId + '</td>' +
           '<td>' + item.mappingId + '</td>' +
-          '<td>' + escapeHtml(item.direction) + '</td>' +
+          '<td>' + escapeHtml(translateDirection(item.direction)) + '</td>' +
           '<td>' + escapeHtml(item.clientIp) + ':' + item.clientPort + '</td>' +
           '<td>' + escapeHtml(item.targetHost) + ':' + item.targetPort + '<div class="muted">' + escapeHtml(packetSummary(item)) + '</div></td>' +
-          '<td>' + item.payloadSize + '<div class="muted">captured ' + item.capturedSize + (item.truncated ? ', truncated' : '') + '</div></td>' +
+          '<td>' + item.payloadSize + '<div class="muted">已捕获 ' + item.capturedSize + (item.truncated ? '，已截断' : '') + '</div></td>' +
           '<td>' + escapeHtml(item.receivedAt) + '</td>' +
-          '<td><button class="compact-button" type="button" data-packet-detail="' + item.id + '">Detail</button></td>' +
+          '<td><button class="compact-button" type="button" data-packet-detail="' + item.id + '">详情</button></td>' +
           '</tr>';
       }).join('');
       bindPacketDetails();
-      document.getElementById('packet-page-info').textContent = 'Page ' + page.page + ' of ' + Math.max(1, Math.ceil(page.total / page.pageSize));
+      document.getElementById('packet-page-info').textContent = '第 ' + page.page + ' 页 / 共 ' + Math.max(1, Math.ceil(page.total / page.pageSize)) + ' 页';
       document.getElementById('packet-prev').disabled = page.page <= 1;
       document.getElementById('packet-next').disabled = page.page * page.pageSize >= page.total;
     }).catch(function (error) {
@@ -475,10 +560,10 @@
   }
 
   function showPacketDetail(data) {
-    modalTitle.textContent = 'Packet #' + data.id;
+    modalTitle.textContent = '报文 #' + data.id;
     modalBody.innerHTML = detailGrid(data, ['mappingId', 'connectionId', 'direction', 'sequenceNo', 'protocolFamily', 'applicationProtocol', 'contentType', 'httpMethod', 'httpUri', 'httpStatus', 'clientIp', 'clientPort', 'listenIp', 'listenPort', 'targetHost', 'targetPort', 'remoteIp', 'remotePort', 'payloadSize', 'capturedSize', 'truncated', 'receivedAt']) +
-      '<div class="panel-body"><a class="download-link" href="/api/packets/' + data.id + '/payload">Download payload</a></div>' +
-      '<div class="preview-grid"><div><h3>Text</h3><div class="preview-box"><pre id="text-preview"></pre></div></div><div><h3>Hex</h3><div class="preview-box"><pre>' + escapeHtml(data.hexPreview || '') + '</pre></div></div></div>';
+      '<div class="panel-body"><a class="download-link" href="/api/packets/' + data.id + '/payload">下载负载</a></div>' +
+      '<div class="preview-grid"><div><h3>文本</h3><div class="preview-box"><pre id="text-preview"></pre></div></div><div><h3>十六进制</h3><div class="preview-box"><pre>' + escapeHtml(data.hexPreview || '') + '</pre></div></div></div>';
     openModal();
     document.getElementById('text-preview').textContent = decodeEscaped(data.textPreview || '');
   }
@@ -500,7 +585,7 @@
   function selectField(id, label, values) {
     return '<div><label for="' + id + '">' + escapeHtml(label) + '</label><select id="' + id + '">' +
       values.map(function (value) {
-        return '<option value="' + escapeHtml(value) + '">' + escapeHtml(value || 'Any') + '</option>';
+        return '<option value="' + escapeHtml(value) + '">' + escapeHtml(translateOptionLabel(value)) + '</option>';
       }).join('') + '</select></div>';
   }
 
@@ -511,7 +596,17 @@
 
   function detailGrid(data, keys) {
     return '<div class="detail-grid">' + keys.map(function (key) {
-      return '<div class="detail-item"><div class="label">' + escapeHtml(key) + '</div><div class="value">' + escapeHtml(data[key] == null ? '-' : data[key]) + '</div></div>';
+      var value = data[key];
+      if (key === 'status') {
+        value = translateStatus(value);
+      } else if (key === 'direction') {
+        value = translateDirection(value);
+      } else if (key === 'applicationProtocol' || key === 'protocolFamily') {
+        value = translateProtocol(value);
+      } else if (key === 'truncated') {
+        value = translateBoolean(value);
+      }
+      return '<div class="detail-item"><div class="label">' + escapeHtml(translateFieldLabel(key)) + '</div><div class="value">' + escapeHtml(value == null ? '-' : value) + '</div></div>';
     }).join('') + '</div>';
   }
 

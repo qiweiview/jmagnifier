@@ -16,10 +16,10 @@
       if (body.success) {
         window.location.href = '/';
       } else {
-        message.textContent = body.error && body.error.message ? body.error.message : 'Login failed';
+        message.textContent = body.error && body.error.message ? body.error.message : '登录失败';
       }
     }).catch(function () {
-      message.textContent = 'Login failed';
+      message.textContent = '登录失败';
     });
   });
 })();
