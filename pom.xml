@@ -84,19 +84,33 @@
         <finalName>jmagnifier</finalName>
         <plugins>
             <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <version>2.1.5.RELEASE</version>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>com.AppStart</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.6.0</version>
+                <configuration>
+                    <descriptors>
+                        <descriptor>src/assembly/dist.xml</descriptor>
+                    </descriptors>
+                </configuration>
                 <executions>
                     <execution>
+                        <id>make-dist</id>
+                        <phase>package</phase>
                         <goals>
-                            <goal>repackage</goal>
+                            <goal>single</goal>
                         </goals>
-                        <configuration>
-                            <mainClass>
-                                com.AppStart
-                            </mainClass>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -107,6 +121,9 @@
                 <includes>
                     <include>**/*</include>
                 </includes>
+                <excludes>
+                    <exclude>config.yml</exclude>
+                </excludes>
                 <filtering>false</filtering>
             </resource>
         </resources>

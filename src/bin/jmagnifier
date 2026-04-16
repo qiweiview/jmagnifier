@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+set -eu
+
+PRG="$0"
+while [ -h "$PRG" ]; do
+  LS=$(ls -ld "$PRG")
+  LINK=$(expr "$LS" : '.*-> \(.*\)$')
+  if expr "$LINK" : '/.*' >/dev/null; then
+    PRG="$LINK"
+  else
+    PRG=$(dirname "$PRG")/"$LINK"
+  fi
+done
+
+BIN_DIR=$(CDPATH= cd -- "$(dirname -- "$PRG")" && pwd)
+APP_HOME=$(CDPATH= cd -- "$BIN_DIR/.." && pwd)
+CONFIG_FILE=${JMAGNIFIER_CONFIG:-"$APP_HOME/config/config.yml"}
+
+if [ "$#" -eq 0 ]; then
+  set -- "$CONFIG_FILE"
+fi
+
+exec java ${JAVA_OPTS:-} -cp "$APP_HOME/config:$APP_HOME/lib/*" com.AppStart "$@"
