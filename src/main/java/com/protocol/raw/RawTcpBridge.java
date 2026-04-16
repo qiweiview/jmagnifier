@@ -84,6 +84,12 @@ public class RawTcpBridge implements ProtocolBridge {
         localHandler.setTarget(remoteHandler);
     }
 
+    @Override
+    public void onForwardConnectFailure(Throwable cause) {
+        localHandler.closeSwap();
+        remoteHandler.closeSwap();
+    }
+
     private void captureRequest(byte[] bytes) {
         if (packetCaptureService == null || connectionContext == null) {
             return;

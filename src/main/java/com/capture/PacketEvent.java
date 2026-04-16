@@ -36,6 +36,18 @@ public class PacketEvent {
 
     private String receivedAt;
 
+    private String protocolFamily;
+
+    private String applicationProtocol;
+
+    private String contentType;
+
+    private String httpMethod;
+
+    private String httpUri;
+
+    private Integer httpStatus;
+
     public long getMappingId() {
         return mappingId;
     }
@@ -170,5 +182,53 @@ public class PacketEvent {
 
     public void setReceivedAt(String receivedAt) {
         this.receivedAt = receivedAt;
+    }
+
+    public String getProtocolFamily() {
+        return protocolFamily;
+    }
+
+    public void setProtocolFamily(String protocolFamily) {
+        this.protocolFamily = protocolFamily;
+    }
+
+    public String getApplicationProtocol() {
+        return applicationProtocol;
+    }
+
+    public void setApplicationProtocol(String applicationProtocol) {
+        this.applicationProtocol = applicationProtocol;
+    }
+
+    public String getContentType() {
+        return contentType;
+    }
+
+    public void setContentType(String contentType) {
+        this.contentType = contentType;
+    }
+
+    public String getHttpMethod() {
+        return httpMethod;
+    }
+
+    public void setHttpMethod(String httpMethod) {
+        this.httpMethod = httpMethod;
+    }
+
+    public String getHttpUri() {
+        return httpUri;
+    }
+
+    public void setHttpUri(String httpUri) {
+        this.httpUri = httpUri;
+    }
+
+    public Integer getHttpStatus() {
+        return httpStatus;
+    }
+
+    public void setHttpStatus(Integer httpStatus) {
+        this.httpStatus = httpStatus;
     }
 }

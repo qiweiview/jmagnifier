@@ -3,6 +3,7 @@ package com.protocol;
 import com.model.EndpointConfig;
 import com.model.Mapping;
 import com.model.TlsConfig;
+import com.protocol.http.HttpProxyBridge;
 import com.protocol.raw.RawTcpBridge;
 import org.junit.Assert;
 import org.junit.Test;
@@ -24,8 +25,8 @@ public class DefaultProtocolPipelineFactoryTest {
         Assert.assertTrue(bridge instanceof RawTcpBridge);
     }
 
-    @Test(expected = UnsupportedOperationException.class)
-    public void shouldRejectHttpTlsBridgeBeforeImplementation() {
+    @Test
+    public void shouldCreateHttpTlsBridge() {
         Mapping mapping = Mapping.createDefaultMapping();
         EndpointConfig listen = new EndpointConfig();
         listen.setPort(9443);
@@ -45,6 +46,8 @@ public class DefaultProtocolPipelineFactoryTest {
         mapping.setForward(forward);
         mapping.applyDefaults();
 
-        factory.createBridge(mapping, null, null);
+        ProtocolBridge bridge = factory.createBridge(mapping, null, null);
+
+        Assert.assertTrue(bridge instanceof HttpProxyBridge);
     }
 }

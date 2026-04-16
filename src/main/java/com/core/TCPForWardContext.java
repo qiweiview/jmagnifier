@@ -81,7 +81,10 @@ public class TCPForWardContext implements VComponent {
             connect.sync();
             if (!connect.isSuccess()) {
                 log.error("connect to {} fail cause:{}", inetSocketAddress, connect.cause() == null ? "unknown" : connect.cause().getMessage());
-                closeWithReason("ERROR");
+                protocolBridge.onForwardConnectFailure(connect.cause());
+                if (mapping.isRawTcpPath()) {
+                    closeWithReason("ERROR");
+                }
                 return;
             }
             remoteChannel = connect.channel();
@@ -90,10 +93,16 @@ public class TCPForWardContext implements VComponent {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("connect to {} interrupted", inetSocketAddress, e);
-            closeWithReason("ERROR");
+            protocolBridge.onForwardConnectFailure(e);
+            if (mapping.isRawTcpPath()) {
+                closeWithReason("ERROR");
+            }
         } catch (Exception e) {
             log.error("connect to {} fail", inetSocketAddress, e);
-            closeWithReason("ERROR");
+            protocolBridge.onForwardConnectFailure(e);
+            if (mapping.isRawTcpPath()) {
+                closeWithReason("ERROR");
+            }
         }
     }
 

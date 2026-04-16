@@ -2,7 +2,9 @@ package com.mapping;
 
 import com.capture.PacketCaptureService;
 import com.core.DataReceiver;
+import com.model.EndpointConfig;
 import com.model.Mapping;
+import com.model.TlsConfig;
 import com.protocol.DefaultProtocolPipelineFactory;
 import com.protocol.ProtocolPipelineFactory;
 import com.runtime.NettyGroups;
@@ -281,9 +283,28 @@ public class RuntimeMappingManager {
             throw new MappingOperationException("INVALID_PROTOCOL_COMBINATION",
                     "http mappings require both listen.applicationProtocol and forward.applicationProtocol to be http");
         }
-        if (Boolean.TRUE.equals(mapping.getEnable()) && !mapping.isRawTcpPath()) {
+        if (!mapping.isRawTcpPath() && !mapping.isHttpPath()) {
             throw new MappingOperationException("UNSUPPORTED_PROTOCOL",
-                    "http/https pipeline is not implemented yet: " + mapping.getListenMode() + " -> " + mapping.getForwardMode());
+                    "unsupported protocol pipeline: " + mapping.getListenMode() + " -> " + mapping.getForwardMode());
+        }
+        validateTlsConfiguration(mapping.getListen(), true);
+        validateTlsConfiguration(mapping.getForward(), false);
+    }
+
+    private void validateTlsConfiguration(EndpointConfig endpointConfig, boolean listenSide) {
+        if (endpointConfig == null || endpointConfig.getTls() == null || !Boolean.TRUE.equals(endpointConfig.getTls().getEnabled())) {
+            return;
+        }
+        if (!"http".equalsIgnoreCase(endpointConfig.getApplicationProtocol())) {
+            throw new MappingOperationException("UNSUPPORTED_PROTOCOL", "TLS is currently supported only for HTTP mappings");
+        }
+        if (listenSide) {
+            TlsConfig tls = endpointConfig.getTls();
+            if (tls.getCertificateFile() == null || tls.getCertificateFile().trim().length() == 0
+                    || tls.getPrivateKeyFile() == null || tls.getPrivateKeyFile().trim().length() == 0) {
+                throw new MappingOperationException("INVALID_TLS_CONFIG",
+                        "listen TLS requires certificateFile and privateKeyFile");
+            }
         }
     }
 

@@ -304,7 +304,8 @@ public class NettyAdminServer {
             if ("INVALID_PORT".equals(code) || "INVALID_FORWARD_HOST".equals(code) || "BAD_REQUEST".equals(code)) {
                 return HttpResponseStatus.BAD_REQUEST;
             }
-            if ("INVALID_PROTOCOL".equals(code) || "INVALID_PROTOCOL_COMBINATION".equals(code) || "UNSUPPORTED_PROTOCOL".equals(code)) {
+            if ("INVALID_PROTOCOL".equals(code) || "INVALID_PROTOCOL_COMBINATION".equals(code)
+                    || "UNSUPPORTED_PROTOCOL".equals(code) || "INVALID_TLS_CONFIG".equals(code)) {
                 return HttpResponseStatus.BAD_REQUEST;
             }
             return HttpResponseStatus.INTERNAL_SERVER_ERROR;
@@ -505,6 +506,12 @@ public class NettyAdminServer {
             data.put("clientPort", record.clientPort);
             data.put("targetHost", record.targetHost);
             data.put("targetPort", record.targetPort);
+            data.put("protocolFamily", record.protocolFamily);
+            data.put("applicationProtocol", record.applicationProtocol);
+            data.put("contentType", record.contentType);
+            data.put("httpMethod", record.httpMethod);
+            data.put("httpUri", record.httpUri);
+            data.put("httpStatus", record.httpStatus);
             data.put("payloadSize", record.payloadSize);
             data.put("capturedSize", record.capturedSize);
             data.put("truncated", record.truncated);

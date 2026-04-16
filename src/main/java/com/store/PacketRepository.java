@@ -26,7 +26,8 @@ public class PacketRepository {
         }
         String packetSql = "INSERT INTO packet(mapping_id, connection_id, direction, sequence_no, client_ip, client_port, "
                 + "listen_ip, listen_port, target_host, target_port, remote_ip, remote_port, payload, payload_size, "
-                + "captured_size, truncated, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                + "captured_size, truncated, protocol_family, application_protocol, content_type, http_method, http_uri, http_status, received_at) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection connection = sqliteDatabase.getConnection();
              PreparedStatement packetStatement = connection.prepareStatement(packetSql)) {
             connection.setAutoCommit(false);
@@ -48,7 +49,17 @@ public class PacketRepository {
                 packetStatement.setInt(14, event.getPayloadSize());
                 packetStatement.setInt(15, event.getCapturedSize());
                 packetStatement.setInt(16, event.isTruncated() ? 1 : 0);
-                packetStatement.setString(17, event.getReceivedAt());
+                packetStatement.setString(17, event.getProtocolFamily());
+                packetStatement.setString(18, event.getApplicationProtocol());
+                packetStatement.setString(19, event.getContentType());
+                packetStatement.setString(20, event.getHttpMethod());
+                packetStatement.setString(21, event.getHttpUri());
+                if (event.getHttpStatus() == null) {
+                    packetStatement.setObject(22, null);
+                } else {
+                    packetStatement.setInt(22, event.getHttpStatus());
+                }
+                packetStatement.setString(23, event.getReceivedAt());
                 packetStatement.addBatch();
                 addDelta(connectionDeltas, event);
             }
@@ -190,13 +201,15 @@ public class PacketRepository {
     private String selectSummaryColumns() {
         return "SELECT id, mapping_id, connection_id, direction, sequence_no, client_ip, client_port, "
                 + "listen_ip, listen_port, target_host, target_port, remote_ip, remote_port, "
-                + "payload_size, captured_size, truncated, received_at";
+                + "payload_size, captured_size, truncated, protocol_family, application_protocol, content_type, "
+                + "http_method, http_uri, http_status, received_at";
     }
 
     private String selectDetailColumns() {
         return "SELECT id, mapping_id, connection_id, direction, sequence_no, client_ip, client_port, "
                 + "listen_ip, listen_port, target_host, target_port, remote_ip, remote_port, "
-                + "payload, payload_size, captured_size, truncated, received_at";
+                + "payload, payload_size, captured_size, truncated, protocol_family, application_protocol, content_type, "
+                + "http_method, http_uri, http_status, received_at";
     }
 
     private PacketRecord toRecord(ResultSet resultSet, boolean includePayload) throws SQLException {
@@ -217,6 +230,13 @@ public class PacketRepository {
         record.payloadSize = resultSet.getInt("payload_size");
         record.capturedSize = resultSet.getInt("captured_size");
         record.truncated = resultSet.getInt("truncated") == 1;
+        record.protocolFamily = resultSet.getString("protocol_family");
+        record.applicationProtocol = resultSet.getString("application_protocol");
+        record.contentType = resultSet.getString("content_type");
+        record.httpMethod = resultSet.getString("http_method");
+        record.httpUri = resultSet.getString("http_uri");
+        int httpStatus = resultSet.getInt("http_status");
+        record.httpStatus = resultSet.wasNull() ? null : httpStatus;
         record.receivedAt = resultSet.getString("received_at");
         if (includePayload) {
             byte[] payload = resultSet.getBytes("payload");
@@ -319,5 +339,17 @@ public class PacketRepository {
         public String receivedAt;
 
         public byte[] payload;
+
+        public String protocolFamily;
+
+        public String applicationProtocol;
+
+        public String contentType;
+
+        public String httpMethod;
+
+        public String httpUri;
+
+        public Integer httpStatus;
     }
 }

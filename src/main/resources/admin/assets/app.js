@@ -117,17 +117,38 @@
       '<input type="hidden" id="mapping-id">' +
       '<div><label>Name</label><input id="mapping-name" required></div>' +
       '<div><label>Listen port</label><input id="mapping-listen-port" type="number" min="0" max="65535" required></div>' +
+      '<div><label>Listen protocol</label><select id="mapping-listen-protocol"><option value="tcp">tcp</option><option value="http">http</option></select></div>' +
+      '<label class="check-row"><input id="mapping-listen-tls-enabled" type="checkbox"> Listen TLS</label>' +
+      '<div id="mapping-listen-tls-fields">' +
+      '<div><label>Listen cert file</label><input id="mapping-listen-cert-file"></div>' +
+      '<div><label>Listen private key</label><input id="mapping-listen-key-file"></div>' +
+      '<div><label>Listen key password</label><input id="mapping-listen-key-password" type="password"></div>' +
+      '</div>' +
       '<div><label>Forward host</label><input id="mapping-forward-host" required></div>' +
       '<div><label>Forward port</label><input id="mapping-forward-port" type="number" min="0" max="65535" required></div>' +
+      '<div><label>Forward protocol</label><select id="mapping-forward-protocol"><option value="tcp">tcp</option><option value="http">http</option></select></div>' +
+      '<label class="check-row"><input id="mapping-forward-tls-enabled" type="checkbox"> Forward TLS</label>' +
+      '<div id="mapping-forward-tls-fields">' +
+      '<div><label>Forward SNI host</label><input id="mapping-forward-sni-host"></div>' +
+      '<label class="check-row"><input id="mapping-forward-insecure" type="checkbox"> Insecure skip verify</label>' +
+      '<div><label>Forward trust cert file</label><input id="mapping-forward-trust-cert"></div>' +
+      '</div>' +
+      '<div id="mapping-http-fields">' +
+      '<label class="check-row"><input id="mapping-http-rewrite-host" type="checkbox" checked> Rewrite Host</label>' +
+      '<label class="check-row"><input id="mapping-http-add-x-forwarded" type="checkbox" checked> Add X-Forwarded headers</label>' +
+      '<div><label>HTTP max object size</label><input id="mapping-http-max-object-size" type="number" min="1" value="1048576"></div>' +
+      '</div>' +
       '<label class="check-row"><input id="mapping-enabled" type="checkbox" checked> Enabled</label>' +
       '<button type="submit">Save</button><button id="mapping-reset" class="secondary-button" type="button">Reset</button>' +
       '<p id="mapping-message" class="form-message"></p>' +
       '</form></div></section>' +
-      '<section class="panel"><div class="panel-head"><h2>Mappings</h2><button id="mapping-refresh" class="compact-button" type="button">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Listen</th><th>Target</th><th>Status</th><th>Connections</th><th>Last error</th><th></th></tr></thead><tbody id="mapping-rows"></tbody></table></div></section>' +
+      '<section class="panel"><div class="panel-head"><h2>Mappings</h2><button id="mapping-refresh" class="compact-button" type="button">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Listen</th><th>Forward</th><th>Status</th><th>Connections</th><th>Last error</th><th></th></tr></thead><tbody id="mapping-rows"></tbody></table></div></section>' +
       '</div>';
     document.getElementById('mapping-form').addEventListener('submit', saveMapping);
     document.getElementById('mapping-reset').addEventListener('click', resetMappingForm);
     document.getElementById('mapping-refresh').addEventListener('click', loadMappings);
+    bindMappingFormToggles();
+    resetMappingForm();
     loadMappings();
   }
 
@@ -138,8 +159,8 @@
         return '<tr>' +
           '<td>' + item.id + '</td>' +
           '<td>' + escapeHtml(item.name) + '<div class="muted">' + (item.enabled ? 'enabled' : 'disabled') + '</div></td>' +
-          '<td>' + item.listenPort + '</td>' +
-          '<td>' + escapeHtml(item.forwardHost) + ':' + item.forwardPort + '</td>' +
+          '<td>' + item.listenPort + '<div class="muted">' + escapeHtml(item.listenMode || 'tcp') + '</div></td>' +
+          '<td>' + escapeHtml(item.forwardHost) + ':' + item.forwardPort + '<div class="muted">' + escapeHtml(item.forwardMode || 'tcp') + '</div></td>' +
           '<td>' + statusBadge(item.status) + '</td>' +
           '<td>' + item.activeConnections + '</td>' +
           '<td class="error-text">' + escapeHtml(item.lastError || '') + '</td>' +
@@ -182,31 +203,102 @@
     if (!item) {
       return;
     }
+    var listen = item.listen || {};
+    var forward = item.forward || {};
+    var listenTls = listen.tls || {};
+    var forwardTls = forward.tls || {};
+    var http = item.http || {};
     document.getElementById('mapping-form-title').textContent = 'Edit mapping #' + id;
     document.getElementById('mapping-id').value = item.id;
     document.getElementById('mapping-name').value = item.name || '';
     document.getElementById('mapping-listen-port').value = item.listenPort;
+    document.getElementById('mapping-listen-protocol').value = listen.applicationProtocol || 'tcp';
+    document.getElementById('mapping-listen-tls-enabled').checked = !!listenTls.enabled;
+    document.getElementById('mapping-listen-cert-file').value = listenTls.certificateFile || '';
+    document.getElementById('mapping-listen-key-file').value = listenTls.privateKeyFile || '';
+    document.getElementById('mapping-listen-key-password').value = listenTls.privateKeyPassword || '';
     document.getElementById('mapping-forward-host').value = item.forwardHost || '';
     document.getElementById('mapping-forward-port').value = item.forwardPort;
+    document.getElementById('mapping-forward-protocol').value = forward.applicationProtocol || 'tcp';
+    document.getElementById('mapping-forward-tls-enabled').checked = !!forwardTls.enabled;
+    document.getElementById('mapping-forward-sni-host').value = forwardTls.sniHost || '';
+    document.getElementById('mapping-forward-insecure').checked = !!forwardTls.insecureSkipVerify;
+    document.getElementById('mapping-forward-trust-cert').value = forwardTls.trustCertCollectionFile || '';
+    document.getElementById('mapping-http-rewrite-host').checked = http.rewriteHost !== false;
+    document.getElementById('mapping-http-add-x-forwarded').checked = http.addXForwardedHeaders !== false;
+    document.getElementById('mapping-http-max-object-size').value = http.maxObjectSizeBytes || 1048576;
     document.getElementById('mapping-enabled').checked = !!item.enabled;
+    syncMappingFormVisibility();
   }
 
   function resetMappingForm() {
     document.getElementById('mapping-form-title').textContent = 'New mapping';
     document.getElementById('mapping-form').reset();
     document.getElementById('mapping-id').value = '';
+    document.getElementById('mapping-listen-protocol').value = 'tcp';
+    document.getElementById('mapping-forward-protocol').value = 'tcp';
     document.getElementById('mapping-enabled').checked = true;
+    document.getElementById('mapping-http-rewrite-host').checked = true;
+    document.getElementById('mapping-http-add-x-forwarded').checked = true;
+    document.getElementById('mapping-http-max-object-size').value = 1048576;
+    syncMappingFormVisibility();
     setError('mapping-message', null);
   }
 
   function readMappingForm() {
+    var listenProtocol = valueOf('mapping-listen-protocol') || 'tcp';
+    var forwardProtocol = valueOf('mapping-forward-protocol') || 'tcp';
+    var listenPort = Number(document.getElementById('mapping-listen-port').value);
+    var forwardHost = document.getElementById('mapping-forward-host').value.trim();
+    var forwardPort = Number(document.getElementById('mapping-forward-port').value);
     return {
       name: document.getElementById('mapping-name').value.trim(),
       enabled: document.getElementById('mapping-enabled').checked,
-      listenPort: Number(document.getElementById('mapping-listen-port').value),
-      forwardHost: document.getElementById('mapping-forward-host').value.trim(),
-      forwardPort: Number(document.getElementById('mapping-forward-port').value)
+      listenPort: listenPort,
+      forwardHost: forwardHost,
+      forwardPort: forwardPort,
+      listen: {
+        port: listenPort,
+        applicationProtocol: listenProtocol,
+        tls: {
+          enabled: document.getElementById('mapping-listen-tls-enabled').checked,
+          certificateFile: valueOf('mapping-listen-cert-file') || null,
+          privateKeyFile: valueOf('mapping-listen-key-file') || null,
+          privateKeyPassword: valueOf('mapping-listen-key-password') || null
+        }
+      },
+      forward: {
+        host: forwardHost,
+        port: forwardPort,
+        applicationProtocol: forwardProtocol,
+        tls: {
+          enabled: document.getElementById('mapping-forward-tls-enabled').checked,
+          sniHost: valueOf('mapping-forward-sni-host') || null,
+          insecureSkipVerify: document.getElementById('mapping-forward-insecure').checked,
+          trustCertCollectionFile: valueOf('mapping-forward-trust-cert') || null
+        }
+      },
+      http: {
+        rewriteHost: document.getElementById('mapping-http-rewrite-host').checked,
+        addXForwardedHeaders: document.getElementById('mapping-http-add-x-forwarded').checked,
+        maxObjectSizeBytes: Number(document.getElementById('mapping-http-max-object-size').value || '1048576')
+      }
     };
+  }
+
+  function bindMappingFormToggles() {
+    ['mapping-listen-protocol', 'mapping-forward-protocol', 'mapping-listen-tls-enabled', 'mapping-forward-tls-enabled'].forEach(function (id) {
+      document.getElementById(id).addEventListener('change', syncMappingFormVisibility);
+    });
+  }
+
+  function syncMappingFormVisibility() {
+    var listenProtocol = valueOf('mapping-listen-protocol') || 'tcp';
+    var forwardProtocol = valueOf('mapping-forward-protocol') || 'tcp';
+    var isHttp = listenProtocol === 'http' || forwardProtocol === 'http';
+    document.getElementById('mapping-http-fields').hidden = !isHttp;
+    document.getElementById('mapping-listen-tls-fields').hidden = !document.getElementById('mapping-listen-tls-enabled').checked;
+    document.getElementById('mapping-forward-tls-fields').hidden = !document.getElementById('mapping-forward-tls-enabled').checked;
   }
 
   function saveMapping(event) {
@@ -357,7 +449,7 @@
           '<td>' + item.mappingId + '</td>' +
           '<td>' + escapeHtml(item.direction) + '</td>' +
           '<td>' + escapeHtml(item.clientIp) + ':' + item.clientPort + '</td>' +
-          '<td>' + escapeHtml(item.targetHost) + ':' + item.targetPort + '</td>' +
+          '<td>' + escapeHtml(item.targetHost) + ':' + item.targetPort + '<div class="muted">' + escapeHtml(packetSummary(item)) + '</div></td>' +
           '<td>' + item.payloadSize + '<div class="muted">captured ' + item.capturedSize + (item.truncated ? ', truncated' : '') + '</div></td>' +
           '<td>' + escapeHtml(item.receivedAt) + '</td>' +
           '<td><button class="compact-button" type="button" data-packet-detail="' + item.id + '">Detail</button></td>' +
@@ -384,11 +476,21 @@
 
   function showPacketDetail(data) {
     modalTitle.textContent = 'Packet #' + data.id;
-    modalBody.innerHTML = detailGrid(data, ['mappingId', 'connectionId', 'direction', 'sequenceNo', 'clientIp', 'clientPort', 'listenIp', 'listenPort', 'targetHost', 'targetPort', 'remoteIp', 'remotePort', 'payloadSize', 'capturedSize', 'truncated', 'receivedAt']) +
+    modalBody.innerHTML = detailGrid(data, ['mappingId', 'connectionId', 'direction', 'sequenceNo', 'protocolFamily', 'applicationProtocol', 'contentType', 'httpMethod', 'httpUri', 'httpStatus', 'clientIp', 'clientPort', 'listenIp', 'listenPort', 'targetHost', 'targetPort', 'remoteIp', 'remotePort', 'payloadSize', 'capturedSize', 'truncated', 'receivedAt']) +
       '<div class="panel-body"><a class="download-link" href="/api/packets/' + data.id + '/payload">Download payload</a></div>' +
       '<div class="preview-grid"><div><h3>Text</h3><div class="preview-box"><pre id="text-preview"></pre></div></div><div><h3>Hex</h3><div class="preview-box"><pre>' + escapeHtml(data.hexPreview || '') + '</pre></div></div></div>';
     openModal();
     document.getElementById('text-preview').textContent = decodeEscaped(data.textPreview || '');
+  }
+
+  function packetSummary(item) {
+    if (item.httpMethod || item.httpUri || item.httpStatus) {
+      if (item.direction === 'REQUEST') {
+        return [item.httpMethod || '-', item.httpUri || '-'].join(' ');
+      }
+      return String(item.httpStatus == null ? '-' : item.httpStatus) + (item.httpMethod ? ' ' + item.httpMethod : '');
+    }
+    return item.protocolFamily || '-';
   }
 
   function field(id, label) {

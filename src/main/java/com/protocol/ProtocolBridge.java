@@ -10,4 +10,6 @@ public interface ProtocolBridge {
     ChannelHandler getForwardHandler();
 
     void onForwardChannelActive(Channel channel);
+
+    void onForwardConnectFailure(Throwable cause);
 }

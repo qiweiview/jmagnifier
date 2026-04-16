@@ -76,8 +76,20 @@ public class DatabaseInitializer {
                     + "payload_size INTEGER NOT NULL,"
                     + "captured_size INTEGER NOT NULL,"
                     + "truncated INTEGER NOT NULL,"
+                    + "protocol_family TEXT,"
+                    + "application_protocol TEXT,"
+                    + "content_type TEXT,"
+                    + "http_method TEXT,"
+                    + "http_uri TEXT,"
+                    + "http_status INTEGER,"
                     + "received_at TEXT NOT NULL"
                     + ")");
+            ensureColumn(connection, "packet", "protocol_family", "TEXT");
+            ensureColumn(connection, "packet", "application_protocol", "TEXT");
+            ensureColumn(connection, "packet", "content_type", "TEXT");
+            ensureColumn(connection, "packet", "http_method", "TEXT");
+            ensureColumn(connection, "packet", "http_uri", "TEXT");
+            ensureColumn(connection, "packet", "http_status", "INTEGER");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_packet_mapping_time ON packet(mapping_id, received_at)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_packet_connection_seq ON packet(connection_id, sequence_no)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_packet_direction_time ON packet(direction, received_at)");
