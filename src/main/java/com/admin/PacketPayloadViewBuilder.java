@@ -4,10 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.store.PacketRepository;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.Inflater;
+import java.util.zip.InflaterInputStream;
 
 public class PacketPayloadViewBuilder {
 
@@ -59,9 +64,10 @@ public class PacketPayloadViewBuilder {
         HeaderBlock headerBlock = parseHeaderBlock(headerText);
         byte[] bodyBytes = Arrays.copyOfRange(preview, separator.index + separator.length, preview.length);
         boolean bodyDetected = bodyBytes.length > 0;
-        String bodyText = bodyDetected ? decodeText(bodyBytes) : null;
         boolean bodyTruncated = record != null && record.truncated || previewTruncated;
         String contentType = resolveContentType(record, headerBlock.headersText);
+        String contentEncoding = resolveHeaderValue(headerBlock.headersText, "content-encoding");
+        String bodyText = bodyDetected ? decodeBodyText(bodyBytes, contentEncoding, bodyTruncated) : null;
         boolean bodyJson = bodyDetected && isJsonContentType(contentType);
         String bodyJsonPretty = null;
         if (bodyJson && !bodyTruncated) {
@@ -83,6 +89,10 @@ public class PacketPayloadViewBuilder {
         if (record != null && notBlank(record.contentType)) {
             return record.contentType;
         }
+        return resolveHeaderValue(headersText, "content-type");
+    }
+
+    private String resolveHeaderValue(String headersText, String headerName) {
         if (!notBlank(headersText)) {
             return null;
         }
@@ -93,11 +103,81 @@ public class PacketPayloadViewBuilder {
                 continue;
             }
             String name = line.substring(0, separator).trim();
-            if ("content-type".equalsIgnoreCase(name)) {
+            if (headerName.equalsIgnoreCase(name)) {
                 return line.substring(separator + 1).trim();
             }
         }
         return null;
+    }
+
+    private String decodeBodyText(byte[] bodyBytes, String contentEncoding, boolean bodyTruncated) {
+        if (!bodyTruncated && notBlank(contentEncoding)) {
+            byte[] decoded = tryDecodeContentEncoding(bodyBytes, contentEncoding);
+            if (decoded != null) {
+                return decodeText(decoded);
+            }
+        }
+        return decodeText(bodyBytes);
+    }
+
+    private byte[] tryDecodeContentEncoding(byte[] bodyBytes, String contentEncoding) {
+        byte[] decoded = bodyBytes;
+        String[] encodings = contentEncoding.split(",");
+        for (int i = encodings.length - 1; i >= 0; i--) {
+            String encoding = encodings[i] == null ? null : encodings[i].trim().toLowerCase(Locale.ROOT);
+            if (!notBlank(encoding) || "identity".equals(encoding)) {
+                continue;
+            }
+            if ("gzip".equals(encoding) || "x-gzip".equals(encoding)) {
+                decoded = gunzip(decoded);
+            } else if ("deflate".equals(encoding)) {
+                decoded = inflate(decoded);
+            } else {
+                return null;
+            }
+            if (decoded == null) {
+                return null;
+            }
+        }
+        return decoded;
+    }
+
+    private byte[] gunzip(byte[] compressed) {
+        try {
+            return readAll(new GZIPInputStream(new ByteArrayInputStream(compressed)));
+        } catch (IOException ignore) {
+            return null;
+        }
+    }
+
+    private byte[] inflate(byte[] compressed) {
+        byte[] decoded = inflate(compressed, false);
+        return decoded != null ? decoded : inflate(compressed, true);
+    }
+
+    private byte[] inflate(byte[] compressed, boolean nowrap) {
+        Inflater inflater = new Inflater(nowrap);
+        try {
+            return readAll(new InflaterInputStream(new ByteArrayInputStream(compressed), inflater));
+        } catch (IOException ignore) {
+            return null;
+        } finally {
+            inflater.end();
+        }
+    }
+
+    private byte[] readAll(java.io.InputStream inputStream) throws IOException {
+        try {
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            int read;
+            while ((read = inputStream.read(buffer)) >= 0) {
+                outputStream.write(buffer, 0, read);
+            }
+            return outputStream.toByteArray();
+        } finally {
+            inputStream.close();
+        }
     }
 
     private String tryPrettyJson(String bodyText) {
