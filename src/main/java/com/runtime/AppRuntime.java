@@ -55,7 +55,8 @@ public class AppRuntime {
                 new SpillFileManager(globalConfig.getStore().getSpillDir()));
         this.nettyGroups = new NettyGroups();
         this.runtimeMappingManager = new RuntimeMappingManager(nettyGroups, mappingRepository, connectionRepository, packetCaptureService);
-        this.nettyAdminServer = new NettyAdminServer(globalConfig.getAdmin(), runtimeMappingManager, packetCaptureService, nettyGroups);
+        this.nettyAdminServer = new NettyAdminServer(globalConfig.getAdmin(), runtimeMappingManager, packetCaptureService, nettyGroups,
+                connectionRepository, packetRepository);
     }
 
     public void start() {

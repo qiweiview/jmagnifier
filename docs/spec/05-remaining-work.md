@@ -9,7 +9,7 @@
 - 阶段 2：SQLite schema、mapping / connection 持久化已完成。
 - 阶段 3：异步 packet capture、截断、SQLite writer 已完成。
 - 阶段 4：队列满 spill 到磁盘和回放已完成。
-- 阶段 5 子集：Netty admin server、登录/session、mapping API、`/api/runtime` 已完成。
+- 阶段 5 子集：Netty admin server、登录/session、mapping API、`/api/runtime`、connection 查询 API、packet 查询 API、payload 下载已完成。
 
 ## 范围约束
 
@@ -39,6 +39,8 @@
 
 ### 1.1 Connection 查询 API
 
+状态：已完成。
+
 接口：
 
 ```text
@@ -67,6 +69,8 @@ GET /api/connections/{id}
 - 指定 `mappingId` 和 `status` 能正确过滤。
 
 ### 1.2 Packet 查询 API
+
+状态：已完成。
 
 接口：
 
@@ -380,21 +384,18 @@ DELETE /api/mappings/{id}/packets
 
 ## 推荐剩余开发顺序
 
-1. 完成阶段 5 剩余 API：connection 查询、packet 查询、payload 下载。
-2. 补 API 错误码和 router 拆分。
-3. 完成阶段 6 Web UI。
-4. 补 runtime 关闭原因和端口错误分类。
-5. 补 packet 清理 API。
-6. 添加 Maven Wrapper。
-7. 增加单元测试和集成测试。
-8. 更新 README。
+1. 补 API 错误码和 router 拆分。
+2. 完成阶段 6 Web UI。
+3. 补 runtime 关闭原因和端口错误分类。
+4. 补 packet 清理 API。
+5. 添加 Maven Wrapper。
+6. 增加单元测试和集成测试。
+7. 更新 README。
 
 ## 最小可交付剩余清单
 
 最小可交付还缺：
 
-- connection 查询 API。
-- packet 列表、详情、payload 下载 API。
 - Web 登录页。
 - Web mapping 管理页。
 - Web packet 查看页。

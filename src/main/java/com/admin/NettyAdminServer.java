@@ -9,7 +9,11 @@ import com.mapping.RuntimeMappingManager;
 import com.model.AdminConfig;
 import com.model.Mapping;
 import com.runtime.NettyGroups;
+import com.store.ConnectionRepository;
+import com.store.PacketRepository;
+import com.store.PageResult;
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.*;
@@ -20,16 +24,23 @@ import io.netty.handler.stream.ChunkedWriteHandler;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Slf4j
 public class NettyAdminServer {
+
+    private static final int PREVIEW_BYTES = 4096;
 
     private final AdminConfig adminConfig;
 
     private final RuntimeMappingManager mappingManager;
 
     private final PacketCaptureService packetCaptureService;
+
+    private final ConnectionRepository connectionRepository;
+
+    private final PacketRepository packetRepository;
 
     private final NettyGroups nettyGroups;
 
@@ -38,10 +49,13 @@ public class NettyAdminServer {
     private Channel serverChannel;
 
     public NettyAdminServer(AdminConfig adminConfig, RuntimeMappingManager mappingManager,
-                            PacketCaptureService packetCaptureService, NettyGroups nettyGroups) {
+                            PacketCaptureService packetCaptureService, NettyGroups nettyGroups,
+                            ConnectionRepository connectionRepository, PacketRepository packetRepository) {
         this.adminConfig = adminConfig;
         this.mappingManager = mappingManager;
         this.packetCaptureService = packetCaptureService;
+        this.connectionRepository = connectionRepository;
+        this.packetRepository = packetRepository;
         this.nettyGroups = nettyGroups;
         this.sessionManager = new AdminSessionManager(adminConfig.getSessionTimeoutMinutes());
     }
@@ -145,6 +159,28 @@ public class NettyAdminServer {
                 MappingRuntime runtime = mappingManager.startMapping(readMapping(request));
                 return JsonResponse.success(toMappingResponse(runtime));
             }
+            if (HttpMethod.GET.equals(method) && "/api/connections".equals(path)) {
+                return JsonResponse.success(connectionPage(readConnectionQuery(decoder)));
+            }
+
+            Long connectionId = singleId(path, "/api/connections/");
+            if (connectionId != null && HttpMethod.GET.equals(method)) {
+                return connectionDetail(connectionId);
+            }
+
+            if (HttpMethod.GET.equals(method) && "/api/packets".equals(path)) {
+                return JsonResponse.success(packetPage(readPacketQuery(decoder)));
+            }
+
+            Long packetPayloadId = nestedId(path, "/api/packets/", "/payload");
+            if (packetPayloadId != null && HttpMethod.GET.equals(method)) {
+                return packetPayload(packetPayloadId);
+            }
+
+            Long packetId = singleId(path, "/api/packets/");
+            if (packetId != null && HttpMethod.GET.equals(method)) {
+                return packetDetail(packetId);
+            }
 
             Long mappingId = mappingId(path, "/api/mappings/");
             if (mappingId != null) {
@@ -223,6 +259,89 @@ public class NettyAdminServer {
             }
         }
 
+        private ConnectionRepository.ConnectionQuery readConnectionQuery(QueryStringDecoder decoder) {
+            Map<String, List<String>> params = decoder.parameters();
+            ConnectionRepository.ConnectionQuery query = new ConnectionRepository.ConnectionQuery();
+            query.mappingId = longParam(params, "mappingId");
+            query.clientIp = stringParam(params, "clientIp");
+            query.status = stringParam(params, "status");
+            query.from = stringParam(params, "from");
+            query.to = stringParam(params, "to");
+            query.page = intParam(params, "page", 1);
+            query.pageSize = intParam(params, "pageSize", 50);
+            return query;
+        }
+
+        private PacketRepository.PacketQuery readPacketQuery(QueryStringDecoder decoder) {
+            Map<String, List<String>> params = decoder.parameters();
+            PacketRepository.PacketQuery query = new PacketRepository.PacketQuery();
+            query.mappingId = longParam(params, "mappingId");
+            query.connectionId = longParam(params, "connectionId");
+            query.direction = stringParam(params, "direction");
+            if (query.direction != null && !"REQUEST".equals(query.direction) && !"RESPONSE".equals(query.direction)) {
+                throw new IllegalArgumentException("direction must be REQUEST or RESPONSE");
+            }
+            query.from = stringParam(params, "from");
+            query.to = stringParam(params, "to");
+            query.page = intParam(params, "page", 1);
+            query.pageSize = intParam(params, "pageSize", 50);
+            return query;
+        }
+
+        private Map<String, Object> connectionPage(ConnectionRepository.ConnectionQuery query) {
+            PageResult<ConnectionRepository.ConnectionRecord> page = connectionRepository.query(query);
+            List<Map<String, Object>> items = new ArrayList<>();
+            for (ConnectionRepository.ConnectionRecord record : page.getItems()) {
+                items.add(toConnectionResponse(record, false));
+            }
+            return pageResponse(items, page.getPage(), page.getPageSize(), page.getTotal());
+        }
+
+        private FullHttpResponse connectionDetail(long connectionId) {
+            ConnectionRepository.ConnectionRecord record = connectionRepository.findById(connectionId);
+            if (record == null) {
+                return JsonResponse.error(HttpResponseStatus.NOT_FOUND, "NOT_FOUND", "connection not found");
+            }
+            Map<String, Object> data = toConnectionResponse(record, true);
+            List<Map<String, Object>> packets = new ArrayList<>();
+            for (PacketRepository.PacketRecord packet : packetRepository.findRecentByConnectionId(connectionId, 50)) {
+                packets.add(toPacketSummary(packet));
+            }
+            data.put("recentPackets", packets);
+            return JsonResponse.success(data);
+        }
+
+        private Map<String, Object> packetPage(PacketRepository.PacketQuery query) {
+            PageResult<PacketRepository.PacketRecord> page = packetRepository.query(query);
+            List<Map<String, Object>> items = new ArrayList<>();
+            for (PacketRepository.PacketRecord record : page.getItems()) {
+                items.add(toPacketSummary(record));
+            }
+            return pageResponse(items, page.getPage(), page.getPageSize(), page.getTotal());
+        }
+
+        private FullHttpResponse packetDetail(long packetId) {
+            PacketRepository.PacketRecord record = packetRepository.findById(packetId);
+            if (record == null) {
+                return JsonResponse.error(HttpResponseStatus.NOT_FOUND, "NOT_FOUND", "packet not found");
+            }
+            return JsonResponse.success(toPacketDetail(record));
+        }
+
+        private FullHttpResponse packetPayload(long packetId) {
+            PacketRepository.PacketRecord record = packetRepository.findById(packetId);
+            if (record == null) {
+                return JsonResponse.error(HttpResponseStatus.NOT_FOUND, "NOT_FOUND", "packet not found");
+            }
+            byte[] payload = record.payload == null ? new byte[0] : record.payload;
+            FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
+                    HttpResponseStatus.OK, Unpooled.wrappedBuffer(payload));
+            response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/octet-stream");
+            response.headers().set(HttpHeaderNames.CONTENT_LENGTH, payload.length);
+            response.headers().set("Content-Disposition", "attachment; filename=\"packet-" + packetId + ".bin\"");
+            return response;
+        }
+
         private List<Map<String, Object>> mappingList() {
             List<Map<String, Object>> items = new ArrayList<>();
             for (MappingRuntime runtime : mappingManager.listMappingsWithStatus()) {
@@ -280,6 +399,121 @@ public class NettyAdminServer {
             return data;
         }
 
+        private Map<String, Object> toConnectionResponse(ConnectionRepository.ConnectionRecord record, boolean detail) {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("id", record.id);
+            data.put("mappingId", record.mappingId);
+            data.put("clientIp", record.clientIp);
+            data.put("clientPort", record.clientPort);
+            if (detail) {
+                data.put("listenIp", record.listenIp);
+            }
+            data.put("listenPort", record.listenPort);
+            data.put("forwardHost", record.forwardHost);
+            data.put("forwardPort", record.forwardPort);
+            if (detail) {
+                data.put("remoteIp", record.remoteIp);
+                data.put("remotePort", record.remotePort);
+                data.put("closeReason", record.closeReason);
+                data.put("errorMessage", record.errorMessage);
+            }
+            data.put("status", record.status);
+            data.put("openedAt", record.openedAt);
+            data.put("closedAt", record.closedAt);
+            data.put("bytesUp", record.bytesUp);
+            data.put("bytesDown", record.bytesDown);
+            return data;
+        }
+
+        private Map<String, Object> toPacketSummary(PacketRepository.PacketRecord record) {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("id", record.id);
+            data.put("connectionId", record.connectionId);
+            data.put("mappingId", record.mappingId);
+            data.put("direction", record.direction);
+            data.put("sequenceNo", record.sequenceNo);
+            data.put("clientIp", record.clientIp);
+            data.put("clientPort", record.clientPort);
+            data.put("targetHost", record.targetHost);
+            data.put("targetPort", record.targetPort);
+            data.put("payloadSize", record.payloadSize);
+            data.put("capturedSize", record.capturedSize);
+            data.put("truncated", record.truncated);
+            data.put("receivedAt", record.receivedAt);
+            return data;
+        }
+
+        private Map<String, Object> toPacketDetail(PacketRepository.PacketRecord record) {
+            Map<String, Object> data = toPacketSummary(record);
+            byte[] payload = record.payload == null ? new byte[0] : record.payload;
+            data.put("listenIp", record.listenIp);
+            data.put("listenPort", record.listenPort);
+            data.put("remoteIp", record.remoteIp);
+            data.put("remotePort", record.remotePort);
+            data.put("hexPreview", hexPreview(payload));
+            data.put("textPreview", textPreview(payload));
+            data.put("previewBytes", Math.min(payload.length, PREVIEW_BYTES));
+            data.put("previewTruncated", payload.length > PREVIEW_BYTES);
+            return data;
+        }
+
+        private Map<String, Object> pageResponse(List<Map<String, Object>> items, int page, int pageSize, long total) {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("items", items);
+            data.put("page", page);
+            data.put("pageSize", pageSize);
+            data.put("total", total);
+            return data;
+        }
+
+        private String hexPreview(byte[] payload) {
+            StringBuilder builder = new StringBuilder();
+            int length = Math.min(payload.length, PREVIEW_BYTES);
+            for (int i = 0; i < length; i++) {
+                if (i > 0) {
+                    builder.append(i % 16 == 0 ? '\n' : ' ');
+                }
+                int value = payload[i] & 0xff;
+                if (value < 16) {
+                    builder.append('0');
+                }
+                builder.append(Integer.toHexString(value).toUpperCase(Locale.ROOT));
+            }
+            return builder.toString();
+        }
+
+        private String textPreview(byte[] payload) {
+            int length = Math.min(payload.length, PREVIEW_BYTES);
+            String text = new String(Arrays.copyOf(payload, length), StandardCharsets.UTF_8);
+            StringBuilder normalized = new StringBuilder(text.length());
+            for (int i = 0; i < text.length(); i++) {
+                char value = text.charAt(i);
+                normalized.append(Character.isISOControl(value) ? '.' : value);
+            }
+            return htmlEscape(normalized.toString());
+        }
+
+        private String htmlEscape(String text) {
+            StringBuilder escaped = new StringBuilder(text.length());
+            for (int i = 0; i < text.length(); i++) {
+                char value = text.charAt(i);
+                if (value == '&') {
+                    escaped.append("&amp;");
+                } else if (value == '<') {
+                    escaped.append("&lt;");
+                } else if (value == '>') {
+                    escaped.append("&gt;");
+                } else if (value == '"') {
+                    escaped.append("&quot;");
+                } else if (value == '\'') {
+                    escaped.append("&#39;");
+                } else {
+                    escaped.append(value);
+                }
+            }
+            return escaped.toString();
+        }
+
         private Long mappingId(String path, String prefix) {
             if (!path.startsWith(prefix)) {
                 return null;
@@ -288,6 +522,36 @@ public class NettyAdminServer {
             String idPart = rest.contains("/") ? rest.substring(0, rest.indexOf('/')) : rest;
             try {
                 return Long.valueOf(idPart);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+
+        private Long singleId(String path, String prefix) {
+            if (!path.startsWith(prefix)) {
+                return null;
+            }
+            String idPart = path.substring(prefix.length());
+            if (idPart.length() == 0 || idPart.contains("/")) {
+                return null;
+            }
+            return parseId(idPart);
+        }
+
+        private Long nestedId(String path, String prefix, String suffix) {
+            if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+                return null;
+            }
+            String idPart = path.substring(prefix.length(), path.length() - suffix.length());
+            if (idPart.length() == 0 || idPart.contains("/")) {
+                return null;
+            }
+            return parseId(idPart);
+        }
+
+        private Long parseId(String value) {
+            try {
+                return Long.valueOf(value);
             } catch (NumberFormatException e) {
                 return null;
             }
@@ -308,6 +572,39 @@ public class NettyAdminServer {
 
         private String stringValue(Object value) {
             return value == null ? null : String.valueOf(value);
+        }
+
+        private String stringParam(Map<String, List<String>> params, String name) {
+            List<String> values = params.get(name);
+            if (values == null || values.size() == 0) {
+                return null;
+            }
+            String value = values.get(0);
+            return value == null || value.trim().length() == 0 ? null : value.trim();
+        }
+
+        private Long longParam(Map<String, List<String>> params, String name) {
+            String value = stringParam(params, name);
+            if (value == null) {
+                return null;
+            }
+            try {
+                return Long.valueOf(value);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(name + " must be a number");
+            }
+        }
+
+        private int intParam(Map<String, List<String>> params, String name, int defaultValue) {
+            String value = stringParam(params, name);
+            if (value == null) {
+                return defaultValue;
+            }
+            try {
+                return Integer.parseInt(value);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(name + " must be a number");
+            }
         }
 
         private int intValue(Object value, String name) {

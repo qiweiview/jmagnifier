@@ -5,7 +5,9 @@ import com.capture.PacketEvent;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +60,171 @@ public class PacketRepository {
         }
     }
 
+    public PageResult<PacketRecord> query(PacketQuery query) {
+        PacketQuery normalized = normalize(query);
+        QueryParts queryParts = buildQueryParts(normalized);
+        long total = count(queryParts);
+        String sql = selectSummaryColumns()
+                + " FROM packet"
+                + queryParts.whereSql
+                + " ORDER BY received_at DESC, id DESC LIMIT ? OFFSET ?";
+        List<PacketRecord> items = new ArrayList<>();
+        try (Connection connection = sqliteDatabase.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            int index = bindParams(statement, queryParts.params, 1);
+            statement.setInt(index++, normalized.pageSize);
+            statement.setInt(index, (normalized.page - 1) * normalized.pageSize);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    items.add(toRecord(resultSet, false));
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("query packets failed", e);
+        }
+        return new PageResult<>(items, normalized.page, normalized.pageSize, total);
+    }
+
+    public PacketRecord findById(long id) {
+        String sql = selectDetailColumns() + " FROM packet WHERE id = ?";
+        try (Connection connection = sqliteDatabase.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, id);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (resultSet.next()) {
+                    return toRecord(resultSet, true);
+                }
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RuntimeException("query packet failed", e);
+        }
+    }
+
+    public List<PacketRecord> findRecentByConnectionId(long connectionId, int limit) {
+        int effectiveLimit = limit < 1 ? 1 : Math.min(limit, 200);
+        String sql = selectSummaryColumns()
+                + " FROM packet WHERE connection_id = ? ORDER BY received_at DESC, id DESC LIMIT ?";
+        List<PacketRecord> items = new ArrayList<>();
+        try (Connection connection = sqliteDatabase.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, connectionId);
+            statement.setInt(2, effectiveLimit);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    items.add(toRecord(resultSet, false));
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("query recent packets failed", e);
+        }
+        return items;
+    }
+
+    private long count(QueryParts queryParts) {
+        String sql = "SELECT COUNT(*) FROM packet" + queryParts.whereSql;
+        try (Connection connection = sqliteDatabase.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            bindParams(statement, queryParts.params, 1);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() ? resultSet.getLong(1) : 0;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("count packets failed", e);
+        }
+    }
+
+    private QueryParts buildQueryParts(PacketQuery query) {
+        StringBuilder where = new StringBuilder();
+        List<Object> params = new ArrayList<>();
+        appendClause(where, params, query.mappingId, "mapping_id = ?");
+        appendClause(where, params, query.connectionId, "connection_id = ?");
+        appendClause(where, params, query.direction, "direction = ?");
+        appendClause(where, params, query.from, "received_at >= ?");
+        appendClause(where, params, query.to, "received_at <= ?");
+        return new QueryParts(where.length() == 0 ? "" : " WHERE " + where, params);
+    }
+
+    private void appendClause(StringBuilder where, List<Object> params, Object value, String clause) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof String && ((String) value).trim().length() == 0) {
+            return;
+        }
+        if (where.length() > 0) {
+            where.append(" AND ");
+        }
+        where.append(clause);
+        params.add(value);
+    }
+
+    private int bindParams(PreparedStatement statement, List<Object> params, int startIndex) throws SQLException {
+        int index = startIndex;
+        for (Object param : params) {
+            if (param instanceof Integer) {
+                statement.setInt(index++, (Integer) param);
+            } else if (param instanceof Long) {
+                statement.setLong(index++, (Long) param);
+            } else {
+                statement.setString(index++, String.valueOf(param));
+            }
+        }
+        return index;
+    }
+
+    private PacketQuery normalize(PacketQuery query) {
+        PacketQuery normalized = query == null ? new PacketQuery() : query;
+        if (normalized.page < 1) {
+            normalized.page = 1;
+        }
+        if (normalized.pageSize < 1) {
+            normalized.pageSize = 50;
+        }
+        if (normalized.pageSize > 500) {
+            normalized.pageSize = 500;
+        }
+        return normalized;
+    }
+
+    private String selectSummaryColumns() {
+        return "SELECT id, mapping_id, connection_id, direction, sequence_no, client_ip, client_port, "
+                + "listen_ip, listen_port, target_host, target_port, remote_ip, remote_port, "
+                + "payload_size, captured_size, truncated, received_at";
+    }
+
+    private String selectDetailColumns() {
+        return "SELECT id, mapping_id, connection_id, direction, sequence_no, client_ip, client_port, "
+                + "listen_ip, listen_port, target_host, target_port, remote_ip, remote_port, "
+                + "payload, payload_size, captured_size, truncated, received_at";
+    }
+
+    private PacketRecord toRecord(ResultSet resultSet, boolean includePayload) throws SQLException {
+        PacketRecord record = new PacketRecord();
+        record.id = resultSet.getLong("id");
+        record.mappingId = resultSet.getLong("mapping_id");
+        record.connectionId = resultSet.getLong("connection_id");
+        record.direction = resultSet.getString("direction");
+        record.sequenceNo = resultSet.getLong("sequence_no");
+        record.clientIp = resultSet.getString("client_ip");
+        record.clientPort = resultSet.getInt("client_port");
+        record.listenIp = resultSet.getString("listen_ip");
+        record.listenPort = resultSet.getInt("listen_port");
+        record.targetHost = resultSet.getString("target_host");
+        record.targetPort = resultSet.getInt("target_port");
+        record.remoteIp = resultSet.getString("remote_ip");
+        record.remotePort = resultSet.getInt("remote_port");
+        record.payloadSize = resultSet.getInt("payload_size");
+        record.capturedSize = resultSet.getInt("captured_size");
+        record.truncated = resultSet.getInt("truncated") == 1;
+        record.receivedAt = resultSet.getString("received_at");
+        if (includePayload) {
+            byte[] payload = resultSet.getBytes("payload");
+            record.payload = payload == null ? new byte[0] : payload;
+        }
+        return record;
+    }
+
     private void addDelta(Map<Long, long[]> connectionDeltas, PacketEvent event) {
         if (event.getConnectionId() <= 0) {
             return;
@@ -84,5 +251,73 @@ public class PacketRepository {
             }
             statement.executeBatch();
         }
+    }
+
+    private static class QueryParts {
+
+        private final String whereSql;
+
+        private final List<Object> params;
+
+        private QueryParts(String whereSql, List<Object> params) {
+            this.whereSql = whereSql;
+            this.params = params;
+        }
+    }
+
+    public static class PacketQuery {
+
+        public Long mappingId;
+
+        public Long connectionId;
+
+        public String direction;
+
+        public String from;
+
+        public String to;
+
+        public int page = 1;
+
+        public int pageSize = 50;
+    }
+
+    public static class PacketRecord {
+
+        public long id;
+
+        public long mappingId;
+
+        public long connectionId;
+
+        public String direction;
+
+        public long sequenceNo;
+
+        public String clientIp;
+
+        public int clientPort;
+
+        public String listenIp;
+
+        public int listenPort;
+
+        public String targetHost;
+
+        public int targetPort;
+
+        public String remoteIp;
+
+        public int remotePort;
+
+        public int payloadSize;
+
+        public int capturedSize;
+
+        public boolean truncated;
+
+        public String receivedAt;
+
+        public byte[] payload;
     }
 }
