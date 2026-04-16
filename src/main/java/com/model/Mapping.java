@@ -1,5 +1,7 @@
 package com.model;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
@@ -7,6 +9,7 @@ import java.util.UUID;
 public class Mapping {
     public static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
+    @JsonAlias("enabled")
     private Boolean enable = true;
 
     private int listenPort;
