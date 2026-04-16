@@ -10,6 +10,7 @@ import com.store.ConnectionRepository;
 import com.store.DatabaseInitializer;
 import com.store.MappingEntity;
 import com.store.MappingRepository;
+import com.store.PayloadFileStore;
 import com.store.PacketRepository;
 import com.store.SqliteDatabase;
 import org.slf4j.Logger;
@@ -50,7 +51,10 @@ public class AppRuntime {
         new DatabaseInitializer(sqliteDatabase).initialize();
         this.mappingRepository = new MappingRepository(sqliteDatabase);
         ConnectionRepository connectionRepository = new ConnectionRepository(sqliteDatabase);
-        PacketRepository packetRepository = new PacketRepository(sqliteDatabase);
+        PayloadFileStore payloadFileStore = new PayloadFileStore(
+                globalConfig.getStore().getPayloadDir(),
+                globalConfig.getStore().getPayloadSegmentBytes());
+        PacketRepository packetRepository = new PacketRepository(sqliteDatabase, payloadFileStore);
         this.packetCaptureService = new PacketCaptureService(
                 new CaptureOptions(globalConfig.getCapture()),
                 packetRepository,
@@ -62,14 +66,18 @@ public class AppRuntime {
     }
 
     public void start() {
-        log.info("抓包配置生效值 enabled={}, maxCaptureBytes={}, queueCapacity={}, batchSize={}, flushIntervalMillis={}, sqlitePath={}, spillDir={}",
+        log.info("抓包配置生效值 enabled={}, previewBytes={}, payloadStoreType={}, maxPayloadBytes={}, queueCapacity={}, batchSize={}, flushIntervalMillis={}, sqlitePath={}, spillDir={}, payloadDir={}, payloadSegmentBytes={}",
                 packetCaptureService.isEnabled(),
-                packetCaptureService.getMaxCaptureBytes(),
+                packetCaptureService.getPreviewBytes(),
+                packetCaptureService.getPayloadStoreType(),
+                packetCaptureService.getMaxPayloadBytes(),
                 packetCaptureService.getQueueCapacity(),
                 packetCaptureService.getBatchSize(),
                 packetCaptureService.getFlushIntervalMillis(),
                 globalConfig.getStore().getSqlitePath(),
-                globalConfig.getStore().getSpillDir());
+                globalConfig.getStore().getSpillDir(),
+                globalConfig.getStore().getPayloadDir(),
+                globalConfig.getStore().getPayloadSegmentBytes());
         packetCaptureService.start();
         List<MappingEntity> persistedMappings = mappingRepository.findAllActive();
         if (persistedMappings.size() > 0) {

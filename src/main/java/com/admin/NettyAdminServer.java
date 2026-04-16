@@ -10,6 +10,7 @@ import com.mapping.RuntimeMappingManager;
 import com.model.AdminConfig;
 import com.model.Mapping;
 import com.runtime.NettyGroups;
+import com.capture.PayloadStoreType;
 import com.store.ConnectionRepository;
 import com.store.PacketRepository;
 import com.store.PageResult;
@@ -34,8 +35,6 @@ import java.util.*;
 public class NettyAdminServer {
 
     private static final Logger log = LoggerFactory.getLogger(NettyAdminServer.class);
-
-    private static final int PREVIEW_BYTES = 0;
 
     private final AdminConfig adminConfig;
 
@@ -102,7 +101,7 @@ public class NettyAdminServer {
 
         private final ObjectMapper objectMapper = new ObjectMapper();
 
-        private final PacketPayloadViewBuilder payloadViewBuilder = new PacketPayloadViewBuilder(PREVIEW_BYTES);
+        private final PacketPayloadViewBuilder payloadViewBuilder = new PacketPayloadViewBuilder(packetCaptureService.getPreviewBytes());
 
         private final AdminRouter publicRouter = new AdminRouter();
 
@@ -399,12 +398,18 @@ public class NettyAdminServer {
             if (record == null) {
                 return JsonResponse.error(HttpResponseStatus.NOT_FOUND, "NOT_FOUND", "packet not found");
             }
-            byte[] payload = record.payload == null ? new byte[0] : record.payload;
+            boolean hasFullPayload = packetRepository.hasPayloadFile(record);
+            boolean previewComplete = !record.truncated && record.capturedSize >= record.payloadSize;
+            boolean responseComplete = hasFullPayload ? record.payloadComplete : previewComplete;
+            byte[] payload = packetRepository.readPayload(record);
             FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
                     HttpResponseStatus.OK, Unpooled.wrappedBuffer(payload));
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/octet-stream");
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, payload.length);
             response.headers().set("Content-Disposition", "attachment; filename=\"packet-" + packetId + ".bin\"");
+            response.headers().set("X-Payload-Store-Type", record.payloadStoreType == null ? PayloadStoreType.PREVIEW_ONLY.name() : record.payloadStoreType.name());
+            response.headers().set("X-Payload-Complete", Boolean.toString(responseComplete));
+            response.headers().set("X-Payload-Truncated", Boolean.toString(!responseComplete));
             return response;
         }
 
@@ -516,6 +521,10 @@ public class NettyAdminServer {
             data.put("payloadSize", record.payloadSize);
             data.put("capturedSize", record.capturedSize);
             data.put("truncated", record.truncated);
+            data.put("payloadStoreType", record.payloadStoreType == null ? PayloadStoreType.PREVIEW_ONLY.name() : record.payloadStoreType.name());
+            data.put("payloadPreviewSize", record.payloadPreviewSize);
+            data.put("payloadComplete", record.payloadComplete);
+            data.put("fullPayloadAvailable", packetRepository.hasPayloadFile(record));
             data.put("receivedAt", record.receivedAt);
             return data;
         }
@@ -523,6 +532,7 @@ public class NettyAdminServer {
         private Map<String, Object> toPacketDetail(PacketRepository.PacketRecord record) {
             Map<String, Object> data = toPacketSummary(record);
             PacketPayloadViewBuilder.PacketPayloadView payloadView = payloadViewBuilder.build(record);
+            boolean fullPayloadAvailable = packetRepository.hasPayloadFile(record);
             data.put("listenIp", record.listenIp);
             data.put("listenPort", record.listenPort);
             data.put("remoteIp", record.remoteIp);
@@ -532,6 +542,9 @@ public class NettyAdminServer {
             data.put("textPreview", payloadView.textRaw);
             data.put("previewBytes", payloadView.previewBytes);
             data.put("previewTruncated", payloadView.previewTruncated);
+            data.put("storeType", payloadView.storeType);
+            data.put("fullPayloadAvailable", fullPayloadAvailable);
+            data.put("fullPayloadComplete", fullPayloadAvailable && payloadView.fullPayloadComplete);
             return data;
         }
 

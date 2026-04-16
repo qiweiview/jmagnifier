@@ -26,6 +26,8 @@ public class PacketEvent {
 
     private byte[] payload;
 
+    private byte[] payloadPreview;
+
     private int payloadSize;
 
     private int capturedSize;
@@ -47,6 +49,20 @@ public class PacketEvent {
     private String httpUri;
 
     private Integer httpStatus;
+
+    private String payloadStoreType;
+
+    private String payloadFilePath;
+
+    private Long payloadFileOffset;
+
+    private Integer payloadFileLength;
+
+    private int payloadPreviewSize;
+
+    private boolean payloadComplete;
+
+    private String payloadSha256;
 
     public long getMappingId() {
         return mappingId;
@@ -144,6 +160,14 @@ public class PacketEvent {
         this.payload = payload;
     }
 
+    public byte[] getPayloadPreview() {
+        return payloadPreview;
+    }
+
+    public void setPayloadPreview(byte[] payloadPreview) {
+        this.payloadPreview = payloadPreview;
+    }
+
     public int getPayloadSize() {
         return payloadSize;
     }
@@ -230,5 +254,61 @@ public class PacketEvent {
 
     public void setHttpStatus(Integer httpStatus) {
         this.httpStatus = httpStatus;
+    }
+
+    public String getPayloadStoreType() {
+        return payloadStoreType;
+    }
+
+    public void setPayloadStoreType(String payloadStoreType) {
+        this.payloadStoreType = payloadStoreType;
+    }
+
+    public String getPayloadFilePath() {
+        return payloadFilePath;
+    }
+
+    public void setPayloadFilePath(String payloadFilePath) {
+        this.payloadFilePath = payloadFilePath;
+    }
+
+    public Long getPayloadFileOffset() {
+        return payloadFileOffset;
+    }
+
+    public void setPayloadFileOffset(Long payloadFileOffset) {
+        this.payloadFileOffset = payloadFileOffset;
+    }
+
+    public Integer getPayloadFileLength() {
+        return payloadFileLength;
+    }
+
+    public void setPayloadFileLength(Integer payloadFileLength) {
+        this.payloadFileLength = payloadFileLength;
+    }
+
+    public int getPayloadPreviewSize() {
+        return payloadPreviewSize;
+    }
+
+    public void setPayloadPreviewSize(int payloadPreviewSize) {
+        this.payloadPreviewSize = payloadPreviewSize;
+    }
+
+    public boolean isPayloadComplete() {
+        return payloadComplete;
+    }
+
+    public void setPayloadComplete(boolean payloadComplete) {
+        this.payloadComplete = payloadComplete;
+    }
+
+    public String getPayloadSha256() {
+        return payloadSha256;
+    }
+
+    public void setPayloadSha256(String payloadSha256) {
+        this.payloadSha256 = payloadSha256;
     }
 }

@@ -2,6 +2,9 @@ package com.store;
 
 import com.capture.PacketDirection;
 import com.capture.PacketEvent;
+import com.capture.PayloadStoreType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -14,20 +17,32 @@ import java.util.Map;
 
 public class PacketRepository {
 
+    private static final Logger log = LoggerFactory.getLogger(PacketRepository.class);
+
     private final SqliteDatabase sqliteDatabase;
 
+    private final PayloadFileStore payloadFileStore;
+
     public PacketRepository(SqliteDatabase sqliteDatabase) {
+        this(sqliteDatabase, null);
+    }
+
+    public PacketRepository(SqliteDatabase sqliteDatabase, PayloadFileStore payloadFileStore) {
         this.sqliteDatabase = sqliteDatabase;
+        this.payloadFileStore = payloadFileStore;
     }
 
     public void insertBatch(List<PacketEvent> events) {
         if (events == null || events.size() == 0) {
             return;
         }
+        writePayloadFiles(events);
         String packetSql = "INSERT INTO packet(mapping_id, connection_id, direction, sequence_no, client_ip, client_port, "
                 + "listen_ip, listen_port, target_host, target_port, remote_ip, remote_port, payload, payload_size, "
-                + "captured_size, truncated, protocol_family, application_protocol, content_type, http_method, http_uri, http_status, received_at) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                + "captured_size, truncated, protocol_family, application_protocol, content_type, http_method, http_uri, http_status, "
+                + "payload_store_type, payload_file_path, payload_file_offset, payload_file_length, payload_preview_size, "
+                + "payload_complete, payload_sha256, received_at) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection connection = sqliteDatabase.getConnection();
              PreparedStatement packetStatement = connection.prepareStatement(packetSql)) {
             connection.setAutoCommit(false);
@@ -45,7 +60,7 @@ public class PacketRepository {
                 packetStatement.setInt(10, event.getTargetPort());
                 packetStatement.setString(11, event.getRemoteIp());
                 packetStatement.setInt(12, event.getRemotePort());
-                packetStatement.setBytes(13, event.getPayload());
+                packetStatement.setBytes(13, emptyToNull(event.getPayloadPreview()));
                 packetStatement.setInt(14, event.getPayloadSize());
                 packetStatement.setInt(15, event.getCapturedSize());
                 packetStatement.setInt(16, event.isTruncated() ? 1 : 0);
@@ -59,7 +74,22 @@ public class PacketRepository {
                 } else {
                     packetStatement.setInt(22, event.getHttpStatus());
                 }
-                packetStatement.setString(23, event.getReceivedAt());
+                packetStatement.setString(23, event.getPayloadStoreType());
+                packetStatement.setString(24, event.getPayloadFilePath());
+                if (event.getPayloadFileOffset() == null) {
+                    packetStatement.setObject(25, null);
+                } else {
+                    packetStatement.setLong(25, event.getPayloadFileOffset());
+                }
+                if (event.getPayloadFileLength() == null) {
+                    packetStatement.setObject(26, null);
+                } else {
+                    packetStatement.setInt(26, event.getPayloadFileLength());
+                }
+                packetStatement.setInt(27, event.getPayloadPreviewSize());
+                packetStatement.setInt(28, event.isPayloadComplete() ? 1 : 0);
+                packetStatement.setString(29, event.getPayloadSha256());
+                packetStatement.setString(30, event.getReceivedAt());
                 packetStatement.addBatch();
                 addDelta(connectionDeltas, event);
             }
@@ -132,6 +162,86 @@ public class PacketRepository {
         return items;
     }
 
+    public byte[] readPayload(PacketRecord record) {
+        if (record == null) {
+            return new byte[0];
+        }
+        if (record.payloadStoreType == PayloadStoreType.FILE
+                && payloadFileStore != null
+                && record.payloadFilePath != null
+                && record.payloadFileOffset != null
+                && record.payloadFileLength != null) {
+            try {
+                return payloadFileStore.read(record.payloadFilePath, record.payloadFileOffset, record.payloadFileLength);
+            } catch (RuntimeException e) {
+                log.warn("read payload file failed for packet {} cause:{}", record.id, e.getMessage());
+            }
+        }
+        return record.payload == null ? new byte[0] : record.payload;
+    }
+
+    public boolean hasPayloadFile(PacketRecord record) {
+        return record != null
+                && record.payloadStoreType == PayloadStoreType.FILE
+                && payloadFileStore != null
+                && payloadFileStore.exists(record.payloadFilePath);
+    }
+
+    private void writePayloadFiles(List<PacketEvent> events) {
+        for (PacketEvent event : events) {
+            normalizePayloadMetadata(event);
+            if (payloadFileStore == null || PayloadStoreType.fromConfig(event.getPayloadStoreType()) != PayloadStoreType.FILE) {
+                continue;
+            }
+            try {
+                PayloadFileStore.PayloadWriteResult result = payloadFileStore.write(
+                        event.getMappingId(),
+                        event.getReceivedAt(),
+                        event.getPayload(),
+                        event.isPayloadComplete());
+                event.setPayloadFilePath(result.getRelativePath());
+                event.setPayloadFileOffset(result.getOffset());
+                event.setPayloadFileLength(result.getLength());
+                event.setPayloadSha256(result.getSha256());
+            } catch (RuntimeException e) {
+                log.warn("write payload file failed for connection {} seq {} cause:{}",
+                        event.getConnectionId(), event.getSequenceNo(), e.getMessage());
+                event.setPayloadStoreType(PayloadStoreType.PREVIEW_ONLY.name());
+                event.setPayloadFilePath(null);
+                event.setPayloadFileOffset(null);
+                event.setPayloadFileLength(null);
+                event.setPayloadSha256(null);
+                event.setPayloadComplete(false);
+            }
+        }
+    }
+
+    private void normalizePayloadMetadata(PacketEvent event) {
+        if (event.getPayloadPreview() == null) {
+            event.setPayloadPreview(new byte[0]);
+        }
+        if (event.getPayload() == null) {
+            event.setPayload(new byte[0]);
+        }
+        if (event.getPayloadStoreType() == null || event.getPayloadStoreType().trim().length() == 0) {
+            event.setPayloadStoreType(PayloadStoreType.PREVIEW_ONLY.name());
+        }
+        if (event.getPayloadPreviewSize() <= 0 && event.getPayloadPreview() != null) {
+            event.setPayloadPreviewSize(event.getPayloadPreview().length);
+        }
+        if (PayloadStoreType.fromConfig(event.getPayloadStoreType()) != PayloadStoreType.FILE) {
+            event.setPayloadStoreType(PayloadStoreType.PREVIEW_ONLY.name());
+            event.setPayloadFilePath(null);
+            event.setPayloadFileOffset(null);
+            event.setPayloadFileLength(null);
+            event.setPayloadSha256(null);
+        }
+    }
+
+    private byte[] emptyToNull(byte[] bytes) {
+        return bytes == null || bytes.length == 0 ? null : bytes;
+    }
+
     private long count(QueryParts queryParts) {
         String sql = "SELECT COUNT(*) FROM packet" + queryParts.whereSql;
         try (Connection connection = sqliteDatabase.getConnection();
@@ -202,14 +312,16 @@ public class PacketRepository {
         return "SELECT id, mapping_id, connection_id, direction, sequence_no, client_ip, client_port, "
                 + "listen_ip, listen_port, target_host, target_port, remote_ip, remote_port, "
                 + "payload_size, captured_size, truncated, protocol_family, application_protocol, content_type, "
-                + "http_method, http_uri, http_status, received_at";
+                + "http_method, http_uri, http_status, payload_store_type, payload_file_path, payload_file_offset, "
+                + "payload_file_length, payload_preview_size, payload_complete, payload_sha256, received_at";
     }
 
     private String selectDetailColumns() {
         return "SELECT id, mapping_id, connection_id, direction, sequence_no, client_ip, client_port, "
                 + "listen_ip, listen_port, target_host, target_port, remote_ip, remote_port, "
                 + "payload, payload_size, captured_size, truncated, protocol_family, application_protocol, content_type, "
-                + "http_method, http_uri, http_status, received_at";
+                + "http_method, http_uri, http_status, payload_store_type, payload_file_path, payload_file_offset, "
+                + "payload_file_length, payload_preview_size, payload_complete, payload_sha256, received_at";
     }
 
     private PacketRecord toRecord(ResultSet resultSet, boolean includePayload) throws SQLException {
@@ -237,6 +349,15 @@ public class PacketRepository {
         record.httpUri = resultSet.getString("http_uri");
         int httpStatus = resultSet.getInt("http_status");
         record.httpStatus = resultSet.wasNull() ? null : httpStatus;
+        record.payloadStoreType = PayloadStoreType.fromConfig(resultSet.getString("payload_store_type"));
+        record.payloadFilePath = resultSet.getString("payload_file_path");
+        long payloadFileOffset = resultSet.getLong("payload_file_offset");
+        record.payloadFileOffset = resultSet.wasNull() ? null : payloadFileOffset;
+        int payloadFileLength = resultSet.getInt("payload_file_length");
+        record.payloadFileLength = resultSet.wasNull() ? null : payloadFileLength;
+        record.payloadPreviewSize = resultSet.getInt("payload_preview_size");
+        record.payloadComplete = resultSet.getInt("payload_complete") == 1;
+        record.payloadSha256 = resultSet.getString("payload_sha256");
         record.receivedAt = resultSet.getString("received_at");
         if (includePayload) {
             byte[] payload = resultSet.getBytes("payload");
@@ -351,5 +472,19 @@ public class PacketRepository {
         public String httpUri;
 
         public Integer httpStatus;
+
+        public PayloadStoreType payloadStoreType;
+
+        public String payloadFilePath;
+
+        public Long payloadFileOffset;
+
+        public Integer payloadFileLength;
+
+        public int payloadPreviewSize;
+
+        public boolean payloadComplete;
+
+        public String payloadSha256;
     }
 }

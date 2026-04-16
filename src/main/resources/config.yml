@@ -7,10 +7,15 @@ admin:
 store:
   sqlitePath: "./data/jmagnifier.db"
   spillDir: "./data/spill"
+  payloadDir: "./data/payload"
+  payloadSegmentBytes: 134217728
 
 capture:
   enabled: true
   maxCaptureBytes: 40960
+  previewBytes: 4096
+  payloadStoreType: "PREVIEW_ONLY"
+  maxPayloadBytes: 0
   queueCapacity: 10000
   batchSize: 100
   flushIntervalMillis: 200

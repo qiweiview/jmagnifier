@@ -30,14 +30,19 @@ public class PacketPayloadViewBuilder {
 
     public PacketPayloadView build(PacketRepository.PacketRecord record) {
         byte[] payload = record == null || record.payload == null ? new byte[0] : record.payload;
-        int visibleLength = previewBytes <= 0 ? payload.length : Math.min(payload.length, previewBytes);
+        int configuredPreviewBytes = previewBytes > 0 ? previewBytes : (record == null ? 0 : record.capturedSize);
+        int visibleLength = configuredPreviewBytes <= 0 ? payload.length : Math.min(payload.length, configuredPreviewBytes);
         byte[] preview = Arrays.copyOf(payload, visibleLength);
-        boolean previewTruncated = previewBytes > 0 && payload.length > previewBytes;
+        boolean previewTruncated = record != null && record.truncated
+                || configuredPreviewBytes > 0 && payload.length > configuredPreviewBytes;
         return new PacketPayloadView(
                 decodeText(preview),
                 hexPreview(preview),
                 visibleLength,
                 previewTruncated,
+                record != null && record.payloadStoreType != null ? record.payloadStoreType.name() : null,
+                record != null && record.payloadFilePath != null,
+                record != null && record.payloadComplete,
                 buildHttpView(record, preview, previewTruncated)
         );
     }
@@ -339,13 +344,24 @@ public class PacketPayloadViewBuilder {
 
         public final boolean previewTruncated;
 
+        public final String storeType;
+
+        public final boolean fullPayloadAvailable;
+
+        public final boolean fullPayloadComplete;
+
         public final HttpPayloadView http;
 
-        private PacketPayloadView(String textRaw, String hex, int previewBytes, boolean previewTruncated, HttpPayloadView http) {
+        private PacketPayloadView(String textRaw, String hex, int previewBytes, boolean previewTruncated,
+                                  String storeType, boolean fullPayloadAvailable, boolean fullPayloadComplete,
+                                  HttpPayloadView http) {
             this.textRaw = textRaw;
             this.hex = hex;
             this.previewBytes = previewBytes;
             this.previewTruncated = previewTruncated;
+            this.storeType = storeType;
+            this.fullPayloadAvailable = fullPayloadAvailable;
+            this.fullPayloadComplete = fullPayloadComplete;
             this.http = http;
         }
     }

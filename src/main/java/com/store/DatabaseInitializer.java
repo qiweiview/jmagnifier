@@ -82,6 +82,13 @@ public class DatabaseInitializer {
                     + "http_method TEXT,"
                     + "http_uri TEXT,"
                     + "http_status INTEGER,"
+                    + "payload_store_type TEXT,"
+                    + "payload_file_path TEXT,"
+                    + "payload_file_offset INTEGER,"
+                    + "payload_file_length INTEGER,"
+                    + "payload_preview_size INTEGER,"
+                    + "payload_complete INTEGER,"
+                    + "payload_sha256 TEXT,"
                     + "received_at TEXT NOT NULL"
                     + ")");
             ensureColumn(connection, "packet", "protocol_family", "TEXT");
@@ -90,6 +97,13 @@ public class DatabaseInitializer {
             ensureColumn(connection, "packet", "http_method", "TEXT");
             ensureColumn(connection, "packet", "http_uri", "TEXT");
             ensureColumn(connection, "packet", "http_status", "INTEGER");
+            ensureColumn(connection, "packet", "payload_store_type", "TEXT");
+            ensureColumn(connection, "packet", "payload_file_path", "TEXT");
+            ensureColumn(connection, "packet", "payload_file_offset", "INTEGER");
+            ensureColumn(connection, "packet", "payload_file_length", "INTEGER");
+            ensureColumn(connection, "packet", "payload_preview_size", "INTEGER");
+            ensureColumn(connection, "packet", "payload_complete", "INTEGER");
+            ensureColumn(connection, "packet", "payload_sha256", "TEXT");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_packet_mapping_time ON packet(mapping_id, received_at)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_packet_connection_seq ON packet(connection_id, sequence_no)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_packet_direction_time ON packet(direction, received_at)");

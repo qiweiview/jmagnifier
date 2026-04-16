@@ -678,6 +678,7 @@
       packetFact('内容类型', data.contentType || '-') +
       packetFact('HTTP 摘要', packetHttpHeadline(data)) +
       packetFact('大小', String(data.payloadSize) + ' / ' + String(data.capturedSize)) +
+      packetFact('存储', packetStoreLabel(data)) +
       packetFact('截断', translateBoolean(data.truncated)) +
       packetFact('接收时间', data.receivedAt || '-') +
       '</div>' +
@@ -695,6 +696,7 @@
   function renderPacketToolbar(data, detail) {
     var currentLabel = packetFeedbackLabel(detail, 'current', '复制当前视图');
     var bodyLabel = packetFeedbackLabel(detail, 'body', '复制请求体');
+    var downloadLabel = packetFullPayloadAvailable(data) ? '下载完整负载' : '下载当前预览';
     return '<div class="content-toolbar">' +
       '<div class="tab-switch" role="tablist" aria-label="报文视图">' +
       tabButton('primary', 'text', '文本', detail.primaryTab === 'text') +
@@ -707,7 +709,7 @@
       '<div class="toolbar-spacer"></div>' +
       '<button class="secondary-button" type="button" data-packet-copy="current">' + escapeHtml(currentLabel) + '</button>' +
       (packetBodyCopyAvailable(data) ? '<button class="secondary-button" type="button" data-packet-copy="body">' + escapeHtml(bodyLabel) + '</button>' : '') +
-      '<a class="download-link" href="/api/packets/' + data.id + '/payload">下载原始负载</a>' +
+      '<a class="download-link" href="/api/packets/' + data.id + '/payload">' + escapeHtml(downloadLabel) + '</a>' +
       (detail.feedback ? '<span class="copy-feedback copy-feedback-' + escapeHtml(detail.feedback.status) + '">' + escapeHtml(detail.feedback.message) + '</span>' : '') +
       '</div>';
   }
@@ -857,6 +859,13 @@
     if (packetPreviewTruncated(data)) {
       notices.push('仅展示前 ' + packetPreviewBytes(data) + ' 字节');
     }
+    if (packetFullPayloadAvailable(data)) {
+      notices.push(packetFullPayloadComplete(data) ? '完整 payload 可下载' : '已保存受限完整 payload，下载内容可能仍不完整');
+    } else if (packetStoreType(data) === 'FILE') {
+      notices.push('完整 payload 文件不可用，当前下载将回退为预览');
+    } else {
+      notices.push('当前仅保留预览数据');
+    }
     if (data.truncated) {
       notices.push('当前报文已截断');
     }
@@ -923,6 +932,47 @@
       values.push(application);
     }
     return values.length ? values.join(' / ') : '-';
+  }
+
+  function packetStoreType(data) {
+    if (data && data.payloadView && data.payloadView.storeType) {
+      return data.payloadView.storeType;
+    }
+    return data && data.payloadStoreType ? data.payloadStoreType : 'PREVIEW_ONLY';
+  }
+
+  function packetFullPayloadAvailable(data) {
+    if (data && data.fullPayloadAvailable != null) {
+      return !!data.fullPayloadAvailable;
+    }
+    if (data && data.payloadView && data.payloadView.fullPayloadAvailable != null) {
+      return !!data.payloadView.fullPayloadAvailable;
+    }
+    return false;
+  }
+
+  function packetFullPayloadComplete(data) {
+    if (data && data.payloadComplete != null) {
+      return !!data.payloadComplete;
+    }
+    if (data && data.payloadView && data.payloadView.fullPayloadComplete != null) {
+      return !!data.payloadView.fullPayloadComplete;
+    }
+    return false;
+  }
+
+  function packetStoreLabel(data) {
+    var type = packetStoreType(data);
+    if (type === 'FILE') {
+      return packetFullPayloadComplete(data) ? '文件完整' : '文件部分';
+    }
+    if (type === 'FILE_DELETED') {
+      return '文件已清理';
+    }
+    if (type === 'NONE') {
+      return '未保存';
+    }
+    return '仅预览';
   }
 
   function packetHttpHeadline(data) {

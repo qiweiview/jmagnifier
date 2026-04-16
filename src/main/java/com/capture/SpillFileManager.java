@@ -19,7 +19,7 @@ public class SpillFileManager {
 
     private static final byte[] MAGIC = new byte[]{'J', 'M', 'S', 'P'};
 
-    private static final byte VERSION = 1;
+    private static final byte VERSION = 2;
 
     private final File spillDir;
 
@@ -50,11 +50,15 @@ public class SpillFileManager {
             outputStream.writeInt(events.size());
             for (PacketEvent event : events) {
                 byte[] payload = event.getPayload() == null ? new byte[0] : event.getPayload();
+                byte[] preview = event.getPayloadPreview() == null ? new byte[0] : event.getPayloadPreview();
                 PacketEvent metadata = copyWithoutPayload(event);
                 byte[] metadataBytes = objectMapper.writeValueAsString(metadata).getBytes(StandardCharsets.UTF_8);
-                outputStream.writeInt(metadataBytes.length + payload.length);
+                outputStream.writeInt(metadataBytes.length + preview.length + payload.length + 8);
                 outputStream.writeInt(metadataBytes.length);
                 outputStream.write(metadataBytes);
+                outputStream.writeInt(preview.length);
+                outputStream.write(preview);
+                outputStream.writeInt(payload.length);
                 outputStream.write(payload);
             }
             outputStream.flush();
@@ -90,7 +94,7 @@ public class SpillFileManager {
                 throw new IOException("invalid spill magic");
             }
             byte version = inputStream.readByte();
-            if (version != VERSION) {
+            if (version != 1 && version != VERSION) {
                 throw new IOException("unsupported spill version: " + version);
             }
             int count = inputStream.readInt();
@@ -106,11 +110,29 @@ public class SpillFileManager {
                 }
                 byte[] metadataBytes = new byte[metadataLength];
                 inputStream.readFully(metadataBytes);
-                int payloadLength = frameLength - metadataLength;
-                byte[] payload = new byte[payloadLength];
-                inputStream.readFully(payload);
                 PacketEvent event = objectMapper.readValue(new String(metadataBytes, StandardCharsets.UTF_8), PacketEvent.class);
-                event.setPayload(payload);
+                if (version == 1) {
+                    int payloadLength = frameLength - metadataLength;
+                    byte[] payload = new byte[payloadLength];
+                    inputStream.readFully(payload);
+                    event.setPayload(payload);
+                    event.setPayloadPreview(payload);
+                } else {
+                    int previewLength = inputStream.readInt();
+                    if (previewLength < 0) {
+                        throw new IOException("invalid spill preview length");
+                    }
+                    byte[] preview = new byte[previewLength];
+                    inputStream.readFully(preview);
+                    int payloadLength = inputStream.readInt();
+                    if (payloadLength < 0) {
+                        throw new IOException("invalid spill payload length");
+                    }
+                    byte[] payload = new byte[payloadLength];
+                    inputStream.readFully(payload);
+                    event.setPayloadPreview(preview);
+                    event.setPayload(payload);
+                }
                 events.add(event);
             }
             return events;
@@ -173,6 +195,15 @@ public class SpillFileManager {
         copy.setTruncated(event.isTruncated());
         copy.setSequenceNo(event.getSequenceNo());
         copy.setReceivedAt(event.getReceivedAt());
+        copy.setProtocolFamily(event.getProtocolFamily());
+        copy.setApplicationProtocol(event.getApplicationProtocol());
+        copy.setContentType(event.getContentType());
+        copy.setHttpMethod(event.getHttpMethod());
+        copy.setHttpUri(event.getHttpUri());
+        copy.setHttpStatus(event.getHttpStatus());
+        copy.setPayloadStoreType(event.getPayloadStoreType());
+        copy.setPayloadPreviewSize(event.getPayloadPreviewSize());
+        copy.setPayloadComplete(event.isPayloadComplete());
         return copy;
     }
 

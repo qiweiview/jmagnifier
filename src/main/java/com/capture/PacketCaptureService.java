@@ -118,7 +118,19 @@ public class PacketCaptureService {
     }
 
     public int getMaxCaptureBytes() {
-        return options.getMaxCaptureBytes();
+        return options.getPreviewBytes();
+    }
+
+    public int getPreviewBytes() {
+        return options.getPreviewBytes();
+    }
+
+    public String getPayloadStoreType() {
+        return options.getPayloadStoreType().name();
+    }
+
+    public int getMaxPayloadBytes() {
+        return options.getMaxPayloadBytes();
     }
 
     public int getBatchSize() {
@@ -159,11 +171,23 @@ public class PacketCaptureService {
 
     private PacketEvent truncate(PacketEvent event, byte[] bytes) {
         int payloadSize = bytes.length;
-        int capturedSize = Math.min(payloadSize, options.getMaxCaptureBytes());
+        int capturedSize = Math.min(payloadSize, options.getPreviewBytes());
         event.setPayloadSize(payloadSize);
         event.setCapturedSize(capturedSize);
+        event.setPayloadPreviewSize(capturedSize);
         event.setTruncated(payloadSize > capturedSize);
-        event.setPayload(capturedSize == 0 ? new byte[0] : Arrays.copyOf(bytes, capturedSize));
+        event.setPayloadPreview(capturedSize == 0 ? new byte[0] : Arrays.copyOf(bytes, capturedSize));
+        event.setPayloadStoreType(options.getPayloadStoreType().name());
+        if (options.getPayloadStoreType() == PayloadStoreType.FILE) {
+            int storedLength = options.getMaxPayloadBytes() > 0
+                    ? Math.min(payloadSize, options.getMaxPayloadBytes())
+                    : payloadSize;
+            event.setPayload(storedLength == 0 ? new byte[0] : Arrays.copyOf(bytes, storedLength));
+            event.setPayloadComplete(options.getMaxPayloadBytes() <= 0 || payloadSize <= options.getMaxPayloadBytes());
+        } else {
+            event.setPayload(new byte[0]);
+            event.setPayloadComplete(payloadSize == capturedSize);
+        }
         return event;
     }
 

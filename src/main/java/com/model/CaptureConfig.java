@@ -4,7 +4,13 @@ public class CaptureConfig {
 
     private Boolean enabled = true;
 
-    private int maxCaptureBytes = 5*1024*1024;//5MB
+    private int maxCaptureBytes = 5 * 1024 * 1024;
+
+    private Integer previewBytes;
+
+    private String payloadStoreType = "PREVIEW_ONLY";
+
+    private int maxPayloadBytes = 0;
 
     private int queueCapacity = 10000;
 
@@ -26,6 +32,30 @@ public class CaptureConfig {
 
     public void setMaxCaptureBytes(int maxCaptureBytes) {
         this.maxCaptureBytes = maxCaptureBytes;
+    }
+
+    public Integer getPreviewBytes() {
+        return previewBytes;
+    }
+
+    public void setPreviewBytes(Integer previewBytes) {
+        this.previewBytes = previewBytes;
+    }
+
+    public String getPayloadStoreType() {
+        return payloadStoreType;
+    }
+
+    public void setPayloadStoreType(String payloadStoreType) {
+        this.payloadStoreType = payloadStoreType;
+    }
+
+    public int getMaxPayloadBytes() {
+        return maxPayloadBytes;
+    }
+
+    public void setMaxPayloadBytes(int maxPayloadBytes) {
+        this.maxPayloadBytes = maxPayloadBytes;
     }
 
     public int getQueueCapacity() {
