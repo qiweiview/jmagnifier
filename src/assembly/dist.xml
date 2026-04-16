@@ -4,16 +4,17 @@
           xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.1.0 https://maven.apache.org/xsd/assembly-2.1.0.xsd">
     <id>dist</id>
     <formats>
+        <format>dir</format>
         <format>zip</format>
         <format>tar.gz</format>
     </formats>
-    <includeBaseDirectory>true</includeBaseDirectory>
+    <includeBaseDirectory>false</includeBaseDirectory>
     <baseDirectory>${project.artifactId}-${project.version}</baseDirectory>
 
     <dependencySets>
         <dependencySet>
             <outputDirectory>lib</outputDirectory>
-            <useProjectArtifact>true</useProjectArtifact>
+            <useProjectArtifact>false</useProjectArtifact>
             <useTransitiveDependencies>true</useTransitiveDependencies>
             <scope>runtime</scope>
             <unpack>false</unpack>
@@ -21,6 +22,15 @@
     </dependencySets>
 
     <fileSets>
+        <fileSet>
+            <directory>${project.build.directory}</directory>
+            <outputDirectory>lib</outputDirectory>
+            <filtered>false</filtered>
+            <fileMode>0644</fileMode>
+            <includes>
+                <include>${project.build.finalName}.jar</include>
+            </includes>
+        </fileSet>
         <fileSet>
             <directory>src/bin</directory>
             <outputDirectory>bin</outputDirectory>

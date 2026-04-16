@@ -1,7 +1,8 @@
 package com.capture;
 
 import com.store.PacketRepository;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -12,8 +13,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-@Slf4j
 public class PacketCaptureService {
+
+    private static final Logger log = LoggerFactory.getLogger(PacketCaptureService.class);
 
     private final CaptureOptions options;
 

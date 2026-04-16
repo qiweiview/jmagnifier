@@ -7,7 +7,8 @@ import com.runtime.NettyGroups;
 import com.store.ConnectionRepository;
 import com.store.MappingEntity;
 import com.store.MappingRepository;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -17,8 +18,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
-@Slf4j
 public class RuntimeMappingManager {
+
+    private static final Logger log = LoggerFactory.getLogger(RuntimeMappingManager.class);
 
     private final NettyGroups nettyGroups;
 

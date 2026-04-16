@@ -37,17 +37,18 @@ capture:
 mvn -DskipTests package
 ```
 
-打包后会生成：
+打包后会生成可直接运行的目录和压缩包：
 
 ```text
+target/jmagnifier-1.0-dist/
 target/jmagnifier-1.0-dist.zip
 target/jmagnifier-1.0-dist.tar.gz
 ```
 
-解压后的目录结构：
+目录结构：
 
 ```text
-jmagnifier-1.0/
+jmagnifier-1.0-dist/
   bin/
     jmagnifier
     jmagnifier.bat

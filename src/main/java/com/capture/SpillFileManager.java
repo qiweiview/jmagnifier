@@ -1,7 +1,8 @@
 package com.capture;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -12,8 +13,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
-@Slf4j
 public class SpillFileManager {
+
+    private static final Logger log = LoggerFactory.getLogger(SpillFileManager.class);
 
     private static final byte[] MAGIC = new byte[]{'J', 'M', 'S', 'P'};
 

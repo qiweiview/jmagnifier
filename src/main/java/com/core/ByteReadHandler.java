@@ -5,14 +5,16 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 
-@Slf4j
 public class ByteReadHandler extends ChannelInboundHandlerAdapter implements DataSwap {
+
+    private static final Logger log = LoggerFactory.getLogger(ByteReadHandler.class);
 
     public static final String LOCAL_TAG = "[local]";
 

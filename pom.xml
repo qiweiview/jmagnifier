@@ -19,15 +19,6 @@
 
 
     <dependencies>
-        <!-- https://mvnrepository.com/artifact/org.projectlombok/lombok -->
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <version>1.18.32</version>
-            <scope>provided</scope>
-        </dependency>
-
-
         <!--jackson-->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -100,6 +91,8 @@
                 <artifactId>maven-assembly-plugin</artifactId>
                 <version>3.6.0</version>
                 <configuration>
+                    <finalName>${project.artifactId}-${project.version}</finalName>
+                    <appendAssemblyId>true</appendAssemblyId>
                     <descriptors>
                         <descriptor>src/assembly/dist.xml</descriptor>
                     </descriptors>

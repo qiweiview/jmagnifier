@@ -12,12 +12,14 @@ import com.store.MappingEntity;
 import com.store.MappingRepository;
 import com.store.PacketRepository;
 import com.store.SqliteDatabase;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
-@Slf4j
 public class AppRuntime {
+
+    private static final Logger log = LoggerFactory.getLogger(AppRuntime.class);
 
     private final GlobalConfig globalConfig;
 

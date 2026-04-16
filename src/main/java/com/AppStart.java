@@ -7,7 +7,6 @@ import com.model.Mapping;
 import com.runtime.AppRuntime;
 import com.util.ApplicationExit;
 import com.util.YmlParser;
-import lombok.extern.slf4j.Slf4j;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
@@ -16,8 +15,9 @@ import java.util.Arrays;
 import static org.slf4j.Logger.ROOT_LOGGER_NAME;
 
 
-@Slf4j
 public class AppStart {
+    private static final org.slf4j.Logger log = LoggerFactory.getLogger(AppStart.class);
+
     public static final YmlParser ymlParser = new YmlParser();
 
     private static volatile AppRuntime appRuntime;

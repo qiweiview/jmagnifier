@@ -9,7 +9,8 @@ import com.util.NettyComponentConfig;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -19,8 +20,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-@Slf4j
 public class DataReceiver implements VComponent {
+
+    private static final Logger log = LoggerFactory.getLogger(DataReceiver.class);
 
     private Mapping mapping;
 

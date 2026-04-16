@@ -1,12 +1,9 @@
 package com.model;
 
-import lombok.Data;
-
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 
-@Data
 public class Mapping {
     public static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -24,6 +21,61 @@ public class Mapping {
 
     private DumpConfig dump;
 
+    public Boolean getEnable() {
+        return enable;
+    }
+
+    public void setEnable(Boolean enable) {
+        this.enable = enable;
+    }
+
+    public int getListenPort() {
+        return listenPort;
+    }
+
+    public void setListenPort(int listenPort) {
+        this.listenPort = listenPort;
+    }
+
+    public int getForwardPort() {
+        return forwardPort;
+    }
+
+    public void setForwardPort(int forwardPort) {
+        this.forwardPort = forwardPort;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getForwardHost() {
+        return forwardHost;
+    }
+
+    public void setForwardHost(String forwardHost) {
+        this.forwardHost = forwardHost;
+    }
+
+    public ConsoleConfig getConsole() {
+        return console;
+    }
+
+    public void setConsole(ConsoleConfig console) {
+        this.console = console;
+    }
+
+    public DumpConfig getDump() {
+        return dump;
+    }
+
+    public void setDump(DumpConfig dump) {
+        this.dump = dump;
+    }
 
     public static Mapping createDefaultMapping() {
         Mapping mapping = new Mapping();

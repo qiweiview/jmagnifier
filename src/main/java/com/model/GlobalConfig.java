@@ -2,15 +2,15 @@ package com.model;
 
 
 import com.util.ApplicationExit;
-import lombok.Data;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
-@Slf4j
-@Data
 public class GlobalConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalConfig.class);
 
     public static GlobalConfig DEFAULT_INSTANT;
 
@@ -22,6 +22,37 @@ public class GlobalConfig {
 
     private List<Mapping> mappings;
 
+    public StoreConfig getStore() {
+        return store;
+    }
+
+    public void setStore(StoreConfig store) {
+        this.store = store;
+    }
+
+    public AdminConfig getAdmin() {
+        return admin;
+    }
+
+    public void setAdmin(AdminConfig admin) {
+        this.admin = admin;
+    }
+
+    public CaptureConfig getCapture() {
+        return capture;
+    }
+
+    public void setCapture(CaptureConfig capture) {
+        this.capture = capture;
+    }
+
+    public List<Mapping> getMappings() {
+        return mappings;
+    }
+
+    public void setMappings(List<Mapping> mappings) {
+        this.mappings = mappings;
+    }
 
     /**
      * 验证

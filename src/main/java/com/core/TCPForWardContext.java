@@ -8,15 +8,17 @@ import com.util.NettyComponentConfig;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-@Slf4j
 public class TCPForWardContext implements VComponent {
+
+    private static final Logger log = LoggerFactory.getLogger(TCPForWardContext.class);
 
     private Mapping mapping;
 

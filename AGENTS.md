@@ -103,3 +103,8 @@ The `exec:java` command requires adding/configuring `exec-maven-plugin` or using
 - Do not treat `README.md` as fully authoritative for configuration keys; confirm against `com.model` classes and `src/main/resources/config.yml`.
 - If adding regular CI or local checks, add a Maven Wrapper first so future agents can run the same commands consistently.
 
+### 5.2 常用指令
+```bash
+# maven 
+/Applications/IntelliJ IDEA.app/Contents/plugins/maven/lib/maven3/bin/mvn
+```
