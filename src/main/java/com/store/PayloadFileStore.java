@@ -15,6 +15,7 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 public class PayloadFileStore {
 
@@ -23,6 +24,8 @@ public class PayloadFileStore {
     private static final byte VERSION = 1;
 
     public static final int FRAME_HEADER_BYTES = 17;
+
+    private static final Pattern DATE_DIR_PATTERN = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 
     private final File payloadDir;
 
@@ -161,6 +164,19 @@ public class PayloadFileStore {
         return new RetentionResult(deletedPaths.size(), deletedBytes, new ArrayList<>(deletedPaths));
     }
 
+    public synchronized DeleteResult deleteAllSegments() {
+        return deleteSegmentFiles(listSegmentFiles());
+    }
+
+    public synchronized DeleteResult deleteSegmentsBeforeDate(String keepDateExclusive) {
+        if (keepDateExclusive == null || keepDateExclusive.trim().length() == 0) {
+            throw new IllegalArgumentException("keepDateExclusive is required");
+        }
+        List<File> files = new ArrayList<>();
+        collectSegmentFilesBeforeDate(keepDateExclusive, files);
+        return deleteSegmentFiles(files);
+    }
+
     public int countSegmentFiles() {
         return listSegmentFiles().size();
     }
@@ -228,6 +244,24 @@ public class PayloadFileStore {
         return files;
     }
 
+    private void collectSegmentFilesBeforeDate(String keepDateExclusive, List<File> files) {
+        if (payloadDir == null || !payloadDir.exists()) {
+            return;
+        }
+        File[] children = payloadDir.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File child : children) {
+            if (!child.isDirectory() || !DATE_DIR_PATTERN.matcher(child.getName()).matches()) {
+                continue;
+            }
+            if (child.getName().compareTo(keepDateExclusive) < 0) {
+                collectSegmentFiles(child, files);
+            }
+        }
+    }
+
     private void collectSegmentFiles(File directory, List<File> files) {
         if (directory == null || !directory.exists()) {
             return;
@@ -251,6 +285,18 @@ public class PayloadFileStore {
             total += file.length();
         }
         return total;
+    }
+
+    private DeleteResult deleteSegmentFiles(List<File> files) {
+        if (files == null || files.isEmpty()) {
+            return DeleteResult.empty();
+        }
+        Set<String> deletedPaths = new LinkedHashSet<>();
+        long deletedBytes = 0;
+        for (File file : files) {
+            deletedBytes += deleteSegmentFile(file, deletedPaths);
+        }
+        return new DeleteResult(deletedPaths.size(), deletedBytes, new ArrayList<>(deletedPaths));
     }
 
     private long deleteSegmentFile(File file, Set<String> deletedPaths) {
@@ -406,6 +452,37 @@ public class PayloadFileStore {
             this.deletedFiles = deletedFiles;
             this.deletedBytes = deletedBytes;
             this.deletedRelativePaths = deletedRelativePaths;
+        }
+
+        public int getDeletedFiles() {
+            return deletedFiles;
+        }
+
+        public long getDeletedBytes() {
+            return deletedBytes;
+        }
+
+        public List<String> getDeletedRelativePaths() {
+            return deletedRelativePaths;
+        }
+    }
+
+    public static class DeleteResult {
+
+        private final int deletedFiles;
+
+        private final long deletedBytes;
+
+        private final List<String> deletedRelativePaths;
+
+        public DeleteResult(int deletedFiles, long deletedBytes, List<String> deletedRelativePaths) {
+            this.deletedFiles = deletedFiles;
+            this.deletedBytes = deletedBytes;
+            this.deletedRelativePaths = deletedRelativePaths;
+        }
+
+        public static DeleteResult empty() {
+            return new DeleteResult(0, 0, Collections.<String>emptyList());
         }
 
         public int getDeletedFiles() {

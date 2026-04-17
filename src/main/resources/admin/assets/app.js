@@ -271,9 +271,140 @@
 
   function renderMappings() {
     clearTimer();
-    view.innerHTML = pageHead('映射配置', '运行时转发规则管理', heroBadge('简单表单') + heroBadge('分层协议配置')) +
-      '<div class="split">' +
-      '<section class="panel"><div class="panel-head"><h2 id="mapping-form-title">新建映射</h2></div><div class="panel-body">' +
+    view.innerHTML = pageHead('映射配置', '运行时转发规则管理', '<button id="mapping-create" type="button">新建映射</button>') +
+      '<section class="panel"><div class="panel-head"><h2>映射列表</h2><button id="mapping-refresh" class="compact-button" type="button">刷新</button></div>' +
+      '<div class="panel-body panel-stack"><div class="table-wrap"><table><thead><tr><th>ID</th><th>名称</th><th>监听</th><th>转发</th><th>状态</th><th>连接数</th><th>最近错误</th><th></th></tr></thead><tbody id="mapping-rows"></tbody></table></div>' +
+      '<p id="mapping-message" class="form-message"></p></div></section>';
+    document.getElementById('mapping-create').addEventListener('click', function () {
+      openMappingModal('create');
+    });
+    document.getElementById('mapping-refresh').addEventListener('click', loadMappings);
+    loadMappings();
+  }
+
+  function loadMappings() {
+    api('/api/mappings').then(function (items) {
+      state.mappings = items || [];
+      renderMappingRows();
+      if (state.mappingEditor.open && state.mappingEditor.mode === 'edit') {
+        var current = findMappingById(state.mappingEditor.mappingId);
+        if (current) {
+          fillMappingForm(current);
+        }
+      }
+    }).catch(function (error) {
+      setError('mapping-message', error);
+    });
+  }
+
+  function renderMappingRows() {
+    var rows = document.getElementById('mapping-rows');
+    if (!rows) {
+      return;
+    }
+    rows.innerHTML = state.mappings.length ? state.mappings.map(function (item) {
+      return '<tr>' +
+        '<td>' + item.id + '</td>' +
+        '<td>' + escapeHtml(item.name) + '<div class="muted">' + (item.enabled ? '已启用' : '已禁用') + '</div></td>' +
+        '<td>' + item.listenPort + '<div class="muted">' + escapeHtml(translateProtocol(item.listenMode || 'tcp')) + '</div></td>' +
+        '<td>' + escapeHtml(item.forwardHost) + ':' + item.forwardPort + '<div class="muted">' + escapeHtml(translateProtocol(item.forwardMode || 'tcp')) + '</div></td>' +
+        '<td>' + statusBadge(item.status) + '</td>' +
+        '<td>' + item.activeConnections + '</td>' +
+        '<td class="error-text">' + escapeHtml(item.lastError || '') + '</td>' +
+        '<td class="actions">' + renderMappingActionButtons(item) + '</td></tr>';
+    }).join('') : emptyTableRow(8, '当前没有映射配置，可以先新建一条映射。');
+    bindMappingActions();
+  }
+
+  function renderMappingActionButtons(item) {
+    var pendingAction = state.mappingActionPending[item.id];
+    var allDisabled = !!pendingAction;
+    var action = mappingPrimaryAction(item, pendingAction);
+    return [
+      mappingButtonHtml('edit', item.id, '编辑', 'compact-button', allDisabled),
+      mappingButtonHtml(action.action, item.id, action.label, 'compact-button', allDisabled || action.disabled),
+      mappingButtonHtml('delete', item.id, '删除', 'danger-button', allDisabled)
+    ].join('');
+  }
+
+  function mappingPrimaryAction(item, pendingAction) {
+    if (pendingAction === 'start') {
+      return { action: 'start', label: '启动中', disabled: true };
+    }
+    if (pendingAction === 'stop') {
+      return { action: 'stop', label: '停止中', disabled: true };
+    }
+    if (item.status === 'RUNNING') {
+      return { action: 'stop', label: '停止', disabled: false };
+    }
+    if (item.status === 'FAILED') {
+      return { action: 'start', label: '重试启动', disabled: false };
+    }
+    if (item.status === 'STARTING') {
+      return { action: 'start', label: '启动中', disabled: true };
+    }
+    if (item.status === 'STOPPING') {
+      return { action: 'stop', label: '停止中', disabled: true };
+    }
+    return { action: 'start', label: '启动', disabled: false };
+  }
+
+  function mappingButtonHtml(action, id, label, className, disabled) {
+    return '<button class="' + className + '" type="button" data-mapping-action="' + escapeHtml(action) + '" data-mapping-id="' + id + '"' +
+      (disabled ? ' disabled' : '') + '>' + escapeHtml(label) + '</button>';
+  }
+
+  function bindMappingActions() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-mapping-action]'), function (button) {
+      button.addEventListener('click', function () {
+        var id = Number(button.getAttribute('data-mapping-id'));
+        var action = button.getAttribute('data-mapping-action');
+        if (action === 'edit') {
+          editMapping(id);
+          return;
+        }
+        if (action === 'delete') {
+          if (!window.confirm('确认删除映射 ' + id + ' 吗？')) {
+            return;
+          }
+        }
+        mappingAction(id, action);
+      });
+    });
+  }
+
+  function editMapping(id) {
+    openMappingModal('edit', findMappingById(id));
+  }
+
+  function findMappingById(id) {
+    return state.mappings.filter(function (mapping) { return mapping.id === id; })[0];
+  }
+
+  function openMappingModal(mode, item) {
+    if (mode === 'edit' && !item) {
+      setMessage('mapping-message', '映射不存在或已被删除', 'error');
+      return;
+    }
+    state.mappingEditor = defaultMappingEditorState();
+    state.mappingEditor.open = true;
+    state.mappingEditor.mode = mode === 'edit' ? 'edit' : 'create';
+    state.mappingEditor.mappingId = item && item.id != null ? item.id : null;
+    modal.classList.add('modal-mapping-editor');
+    openModal('mapping-editor');
+    renderMappingModal();
+    if (state.mappingEditor.mode === 'edit' && item) {
+      fillMappingForm(item);
+    } else {
+      resetMappingForm('create');
+    }
+  }
+
+  function renderMappingModal() {
+    var editing = state.mappingEditor.mode === 'edit';
+    modalTitle.textContent = editing ? '编辑映射 #' + state.mappingEditor.mappingId : '新建映射';
+    modalBody.innerHTML =
+      '<div class="modal-body-shell">' +
       '<form id="mapping-form" class="form-grid">' +
       '<input type="hidden" id="mapping-id">' +
       '<div><label>名称</label><input id="mapping-name" required></div>' +
@@ -300,67 +431,21 @@
       '<div><label>HTTP 最大对象大小</label><input id="mapping-http-max-object-size" type="number" min="1" value="1048576"></div>' +
       '</div>' +
       '<label class="check-row"><input id="mapping-enabled" type="checkbox" checked> 启用</label>' +
-      '<button type="submit">保存</button><button id="mapping-reset" class="secondary-button" type="button">重置</button>' +
-      '<p id="mapping-message" class="form-message"></p>' +
-      '</form></div></section>' +
-      '<section class="panel"><div class="panel-head"><h2>映射列表</h2><button id="mapping-refresh" class="compact-button" type="button">刷新</button></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>名称</th><th>监听</th><th>转发</th><th>状态</th><th>连接数</th><th>最近错误</th><th></th></tr></thead><tbody id="mapping-rows"></tbody></table></div></section>' +
-      '</div>';
+      '<p id="mapping-modal-message" class="form-message"></p>' +
+      '<div class="modal-actions">' +
+      '<button type="submit"' + (state.mappingEditor.submitting ? ' disabled' : '') + '>保存</button>' +
+      '<button id="mapping-cancel" class="secondary-button" type="button"' + (state.mappingEditor.submitting ? ' disabled' : '') + '>取消</button>' +
+      '</div>' +
+      '</form></div>';
     document.getElementById('mapping-form').addEventListener('submit', saveMapping);
-    document.getElementById('mapping-reset').addEventListener('click', resetMappingForm);
-    document.getElementById('mapping-refresh').addEventListener('click', loadMappings);
+    document.getElementById('mapping-cancel').addEventListener('click', function () {
+      closeModal();
+    });
     bindMappingFormToggles();
-    resetMappingForm();
-    loadMappings();
+    bindMappingFormDirtyState();
   }
 
-  function loadMappings() {
-    api('/api/mappings').then(function (items) {
-      state.mappings = items || [];
-      document.getElementById('mapping-rows').innerHTML = state.mappings.length ? state.mappings.map(function (item) {
-        return '<tr>' +
-          '<td>' + item.id + '</td>' +
-          '<td>' + escapeHtml(item.name) + '<div class="muted">' + (item.enabled ? '已启用' : '已禁用') + '</div></td>' +
-          '<td>' + item.listenPort + '<div class="muted">' + escapeHtml(translateProtocol(item.listenMode || 'tcp')) + '</div></td>' +
-          '<td>' + escapeHtml(item.forwardHost) + ':' + item.forwardPort + '<div class="muted">' + escapeHtml(translateProtocol(item.forwardMode || 'tcp')) + '</div></td>' +
-          '<td>' + statusBadge(item.status) + '</td>' +
-          '<td>' + item.activeConnections + '</td>' +
-          '<td class="error-text">' + escapeHtml(item.lastError || '') + '</td>' +
-          '<td class="actions">' +
-          '<button class="compact-button" type="button" data-edit="' + item.id + '">编辑</button>' +
-          '<button class="compact-button" type="button" data-start="' + item.id + '">启动</button>' +
-          '<button class="compact-button" type="button" data-stop="' + item.id + '">停止</button>' +
-          '<button class="danger-button" type="button" data-delete="' + item.id + '">删除</button>' +
-          '</td></tr>';
-      }).join('') : emptyTableRow(8, '当前没有映射配置，可以先在左侧表单创建一条映射。');
-      bindMappingActions();
-    }).catch(function (error) {
-      setError('mapping-message', error);
-    });
-  }
-
-  function bindMappingActions() {
-    Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function (button) {
-      button.addEventListener('click', function () { editMapping(Number(button.getAttribute('data-edit'))); });
-    });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-start]'), function (button) {
-      button.addEventListener('click', function () { mappingAction(Number(button.getAttribute('data-start')), 'start'); });
-    });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-stop]'), function (button) {
-      button.addEventListener('click', function () { mappingAction(Number(button.getAttribute('data-stop')), 'stop'); });
-    });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-delete]'), function (button) {
-      button.addEventListener('click', function () {
-        if (window.confirm('确认删除映射 ' + button.getAttribute('data-delete') + ' 吗？')) {
-          api('/api/mappings/' + button.getAttribute('data-delete'), { method: 'DELETE' }).then(loadMappings).catch(function (error) {
-            setError('mapping-message', error);
-          });
-        }
-      });
-    });
-  }
-
-  function editMapping(id) {
-    var item = state.mappings.filter(function (mapping) { return mapping.id === id; })[0];
+  function fillMappingForm(item) {
     if (!item) {
       return;
     }
@@ -369,7 +454,7 @@
     var listenTls = listen.tls || {};
     var forwardTls = forward.tls || {};
     var http = item.http || {};
-    document.getElementById('mapping-form-title').textContent = '编辑映射 #' + id;
+    modalTitle.textContent = '编辑映射 #' + item.id;
     document.getElementById('mapping-id').value = item.id;
     document.getElementById('mapping-name').value = item.name || '';
     document.getElementById('mapping-listen-port').value = item.listenPort;
@@ -390,10 +475,10 @@
     document.getElementById('mapping-http-max-object-size').value = http.maxObjectSizeBytes || 1048576;
     document.getElementById('mapping-enabled').checked = !!item.enabled;
     syncMappingFormVisibility();
+    snapshotMappingEditorState();
   }
 
-  function resetMappingForm() {
-    document.getElementById('mapping-form-title').textContent = '新建映射';
+  function resetMappingForm(mode) {
     document.getElementById('mapping-form').reset();
     document.getElementById('mapping-id').value = '';
     document.getElementById('mapping-listen-protocol').value = 'tcp';
@@ -403,7 +488,11 @@
     document.getElementById('mapping-http-add-x-forwarded').checked = true;
     document.getElementById('mapping-http-max-object-size').value = 1048576;
     syncMappingFormVisibility();
-    setError('mapping-message', null);
+    setMessage('mapping-modal-message', '', 'error');
+    state.mappingEditor.mode = mode || 'create';
+    state.mappingEditor.mappingId = null;
+    modalTitle.textContent = '新建映射';
+    snapshotMappingEditorState();
   }
 
   function readMappingForm() {
@@ -453,6 +542,27 @@
     });
   }
 
+  function bindMappingFormDirtyState() {
+    var form = document.getElementById('mapping-form');
+    if (!form) {
+      return;
+    }
+    form.addEventListener('input', updateMappingEditorDirtyState);
+    form.addEventListener('change', updateMappingEditorDirtyState);
+  }
+
+  function snapshotMappingEditorState() {
+    state.mappingEditor.initialValue = JSON.stringify(readMappingForm());
+    state.mappingEditor.dirty = false;
+  }
+
+  function updateMappingEditorDirtyState() {
+    if (!state.mappingEditor.open) {
+      return;
+    }
+    state.mappingEditor.dirty = JSON.stringify(readMappingForm()) !== state.mappingEditor.initialValue;
+  }
+
   function syncMappingFormVisibility() {
     var listenProtocol = valueOf('mapping-listen-protocol') || 'tcp';
     var forwardProtocol = valueOf('mapping-forward-protocol') || 'tcp';
@@ -467,18 +577,71 @@
     var id = document.getElementById('mapping-id').value;
     var path = id ? '/api/mappings/' + id : '/api/mappings';
     var method = id ? 'PUT' : 'POST';
-    api(path, { method: method, body: JSON.stringify(readMappingForm()) }).then(function () {
-      resetMappingForm();
+    var formData = readMappingForm();
+    if (id) {
+      state.mappingActionPending[id] = 'save';
+      renderMappingRows();
+    }
+    state.mappingEditor.submitting = true;
+    renderMappingModal();
+    restoreMappingFormValues(formData);
+    api(path, { method: method, body: JSON.stringify(formData) }).then(function () {
+      state.mappingEditor.submitting = false;
+      state.mappingEditor.dirty = false;
+      delete state.mappingActionPending[id];
+      closeModal(true);
       loadMappings();
     }).catch(function (error) {
-      setError('mapping-message', error);
+      state.mappingEditor.submitting = false;
+      delete state.mappingActionPending[id];
+      renderMappingRows();
+      renderMappingModal();
+      restoreMappingFormValues(formData);
+      state.mappingEditor.dirty = JSON.stringify(formData) !== state.mappingEditor.initialValue;
+      setError('mapping-modal-message', error);
     });
   }
 
   function mappingAction(id, action) {
-    api('/api/mappings/' + id + '/' + action, { method: 'POST' }).then(loadMappings).catch(function (error) {
+    state.mappingActionPending[id] = action;
+    renderMappingRows();
+    var request = action === 'delete'
+      ? api('/api/mappings/' + id, { method: 'DELETE' })
+      : api('/api/mappings/' + id + '/' + action, { method: 'POST' });
+    request.then(function () {
+      delete state.mappingActionPending[id];
+      loadMappings();
+    }).catch(function (error) {
+      delete state.mappingActionPending[id];
+      renderMappingRows();
       setError('mapping-message', error);
     });
+  }
+
+  function restoreMappingFormValues(data) {
+    if (!data) {
+      return;
+    }
+    document.getElementById('mapping-id').value = state.mappingEditor.mappingId || '';
+    document.getElementById('mapping-name').value = data.name || '';
+    document.getElementById('mapping-listen-port').value = data.listenPort;
+    document.getElementById('mapping-listen-protocol').value = data.listen && data.listen.applicationProtocol ? data.listen.applicationProtocol : 'tcp';
+    document.getElementById('mapping-listen-tls-enabled').checked = !!(data.listen && data.listen.tls && data.listen.tls.enabled);
+    document.getElementById('mapping-listen-cert-file').value = data.listen && data.listen.tls && data.listen.tls.certificateFile || '';
+    document.getElementById('mapping-listen-key-file').value = data.listen && data.listen.tls && data.listen.tls.privateKeyFile || '';
+    document.getElementById('mapping-listen-key-password').value = data.listen && data.listen.tls && data.listen.tls.privateKeyPassword || '';
+    document.getElementById('mapping-forward-host').value = data.forwardHost || '';
+    document.getElementById('mapping-forward-port').value = data.forwardPort;
+    document.getElementById('mapping-forward-protocol').value = data.forward && data.forward.applicationProtocol ? data.forward.applicationProtocol : 'tcp';
+    document.getElementById('mapping-forward-tls-enabled').checked = !!(data.forward && data.forward.tls && data.forward.tls.enabled);
+    document.getElementById('mapping-forward-sni-host').value = data.forward && data.forward.tls && data.forward.tls.sniHost || '';
+    document.getElementById('mapping-forward-insecure').checked = !!(data.forward && data.forward.tls && data.forward.tls.insecureSkipVerify);
+    document.getElementById('mapping-forward-trust-cert').value = data.forward && data.forward.tls && data.forward.tls.trustCertCollectionFile || '';
+    document.getElementById('mapping-http-rewrite-host').checked = !!(data.http ? data.http.rewriteHost : true);
+    document.getElementById('mapping-http-add-x-forwarded').checked = !!(data.http ? data.http.addXForwardedHeaders : true);
+    document.getElementById('mapping-http-max-object-size').value = data.http && data.http.maxObjectSizeBytes ? data.http.maxObjectSizeBytes : 1048576;
+    document.getElementById('mapping-enabled').checked = !!data.enabled;
+    syncMappingFormVisibility();
   }
 
   function renderConnections() {
@@ -559,6 +722,8 @@
       packetFeedbackTimer = null;
     }
     modal.classList.remove('modal-packet-detail');
+    modal.classList.remove('modal-mapping-editor');
+    modal.classList.remove('modal-packet-purge');
     state.packetDetail = null;
     modalTitle.textContent = '连接 #' + data.id;
     modalBody.innerHTML = detailGrid(data, ['mappingId', 'clientIp', 'clientPort', 'listenIp', 'listenPort', 'forwardHost', 'forwardPort', 'remoteIp', 'remotePort', 'status', 'closeReason', 'openedAt', 'closedAt', 'bytesUp', 'bytesDown', 'errorMessage']) +
@@ -566,12 +731,12 @@
       (data.recentPackets || []).map(function (packet) {
         return '<tr><td>' + packet.id + '</td><td>' + escapeHtml(translateDirection(packet.direction)) + '</td><td>' + packet.payloadSize + '</td><td>' + packet.capturedSize + '</td><td>' + escapeHtml(packet.receivedAt) + '</td></tr>';
       }).join('') + '</tbody></table></div></div>';
-    openModal();
+    openModal('connection-detail');
   }
 
   function renderPackets() {
     clearTimer();
-    view.innerHTML = pageHead('报文记录', '已捕获报文摘要', heroBadge('文本预览') + heroBadge('十六进制预览')) +
+    view.innerHTML = pageHead('报文记录', '已捕获报文摘要', '<button id="packet-purge-open" class="danger-button" type="button">清理记录</button>') +
       '<section class="panel"><div class="panel-body">' +
       '<div class="toolbar">' +
       field('packet-mapping-id', '映射 ID') +
@@ -583,6 +748,7 @@
       '</div><div class="table-wrap"><table><thead><tr><th>ID</th><th>连接</th><th>映射</th><th>方向</th><th>客户端</th><th>目标</th><th>大小</th><th>接收时间</th><th></th></tr></thead><tbody id="packet-rows"></tbody></table></div>' +
       '<div class="pager"><button id="packet-prev" class="secondary-button" type="button">上一页</button><span id="packet-page-info"></span><button id="packet-next" class="secondary-button" type="button">下一页</button></div>' +
       '<p id="packet-message" class="form-message"></p></div></section>';
+    document.getElementById('packet-purge-open').addEventListener('click', openPacketPurgeModal);
     document.getElementById('packet-search').addEventListener('click', function () {
       state.packetPage = 1;
       loadPackets();
@@ -596,6 +762,70 @@
       loadPackets();
     });
     loadPackets();
+  }
+
+  function openPacketPurgeModal() {
+    state.packetPurge = defaultPacketPurgeState();
+    state.packetPurge.open = true;
+    modal.classList.add('modal-packet-purge');
+    openModal('packet-purge');
+    renderPacketPurgeModal();
+  }
+
+  function renderPacketPurgeModal() {
+    modalTitle.textContent = '清理报文记录';
+    modalBody.innerHTML =
+      '<div class="modal-body-shell modal-danger-shell">' +
+      '<p class="modal-copy">该操作会删除 SQLite 中的报文记录，并同步删除对应 payload 文件，无法恢复。</p>' +
+      '<div class="danger-note-list">' +
+      '<div class="danger-note"><strong>清空非当日</strong><span>保留当前报文日期的数据，删除更早日期的数据。</span></div>' +
+      '<div class="danger-note"><strong>清空全部</strong><span>删除所有报文记录和 payload 文件。</span></div>' +
+      '</div>' +
+      '<p id="packet-purge-message" class="form-message">' + escapeHtml(state.packetPurge.error || '') + '</p>' +
+      '<div class="modal-actions modal-actions-danger">' +
+      '<button class="danger-button" type="button" data-packet-purge="NON_TODAY"' + (state.packetPurge.submitting ? ' disabled' : '') + '>清空非当日</button>' +
+      '<button class="danger-button" type="button" data-packet-purge="ALL"' + (state.packetPurge.submitting ? ' disabled' : '') + '>清空全部</button>' +
+      '<button id="packet-purge-cancel" class="secondary-button" type="button"' + (state.packetPurge.submitting ? ' disabled' : '') + '>取消</button>' +
+      '</div></div>';
+    document.getElementById('packet-purge-cancel').addEventListener('click', function () {
+      closeModal();
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-packet-purge]'), function (button) {
+      button.addEventListener('click', function () {
+        purgePackets(button.getAttribute('data-packet-purge'));
+      });
+    });
+  }
+
+  function purgePackets(scope) {
+    state.packetPurge.submitting = true;
+    state.packetPurge.error = null;
+    renderPacketPurgeModal();
+    api('/api/packets/purge', { method: 'POST', body: JSON.stringify({ scope: scope }) }).then(function (result) {
+      state.packetPurge = defaultPacketPurgeState();
+      closeModal(true);
+      state.packetPage = 1;
+      loadPackets();
+      setMessage('packet-message', formatPacketPurgeMessage(result), 'success');
+    }).catch(function (error) {
+      state.packetPurge.submitting = false;
+      state.packetPurge.error = error.message;
+      renderPacketPurgeModal();
+    });
+  }
+
+  function formatPacketPurgeMessage(result) {
+    if (!result) {
+      return '清理完成';
+    }
+    var parts = [
+      '已清理 ' + String(result.deletedPackets || 0) + ' 条报文',
+      '删除 ' + String(result.deletedPayloadFiles || 0) + ' 个 payload 文件'
+    ];
+    if (result.keptDate) {
+      parts.push('保留日期 ' + result.keptDate);
+    }
+    return parts.join('，');
   }
 
   function loadPackets() {
@@ -648,8 +878,10 @@
       textTab: 'raw',
       feedback: null
     };
+    modal.classList.remove('modal-mapping-editor');
+    modal.classList.remove('modal-packet-purge');
     modal.classList.add('modal-packet-detail');
-    openModal();
+    openModal('packet-detail');
     renderPacketDetailModal();
   }
 
@@ -1064,22 +1296,38 @@
     return textarea.value;
   }
 
-  function openModal() {
+  function openModal(type) {
+    state.modalType = type || null;
     document.body.classList.add('modal-open');
     modal.classList.remove('hidden');
   }
 
-  function closeModal() {
+  function closeModal(force) {
+    if (!force && !canCloseModal()) {
+      return;
+    }
     if (packetFeedbackTimer) {
       window.clearTimeout(packetFeedbackTimer);
       packetFeedbackTimer = null;
     }
     state.packetDetail = null;
+    state.mappingEditor = defaultMappingEditorState();
+    state.packetPurge = defaultPacketPurgeState();
+    state.modalType = null;
     modal.classList.remove('modal-packet-detail');
+    modal.classList.remove('modal-mapping-editor');
+    modal.classList.remove('modal-packet-purge');
     document.body.classList.remove('modal-open');
     modal.classList.add('hidden');
     modalTitle.textContent = '';
     modalBody.innerHTML = '';
+  }
+
+  function canCloseModal() {
+    if (state.modalType === 'mapping-editor' && state.mappingEditor.open && state.mappingEditor.dirty && !state.mappingEditor.submitting) {
+      return window.confirm('表单内容尚未保存，确认关闭吗？');
+    }
+    return true;
   }
 
   function clearTimer() {
@@ -1090,6 +1338,9 @@
   }
 
   function route() {
+    if (!modal.classList.contains('hidden')) {
+      closeModal(true);
+    }
     toggleNav(false);
     setActiveNav();
     if (window.location.pathname === '/mappings') {

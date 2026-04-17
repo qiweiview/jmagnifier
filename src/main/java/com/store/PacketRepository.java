@@ -11,6 +11,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,8 @@ public class PacketRepository {
     private final SqliteDatabase sqliteDatabase;
 
     private final PayloadFileStore payloadFileStore;
+
+    private final Object packetMutationLock = new Object();
 
     public PacketRepository(SqliteDatabase sqliteDatabase) {
         this(sqliteDatabase, null);
@@ -36,69 +39,96 @@ public class PacketRepository {
         if (events == null || events.size() == 0) {
             return;
         }
-        List<PayloadFileStore.PayloadWriteResult> payloadWrites = writePayloadFiles(events);
-        String packetSql = "INSERT INTO packet(mapping_id, connection_id, direction, sequence_no, client_ip, client_port, "
-                + "listen_ip, listen_port, target_host, target_port, remote_ip, remote_port, payload, payload_size, "
-                + "captured_size, truncated, protocol_family, application_protocol, content_type, http_method, http_uri, http_status, "
-                + "payload_store_type, payload_file_path, payload_file_offset, payload_file_length, payload_preview_size, "
-                + "payload_complete, payload_sha256, received_at) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection connection = sqliteDatabase.getConnection();
-             PreparedStatement packetStatement = connection.prepareStatement(packetSql)) {
-            connection.setAutoCommit(false);
-            Map<Long, long[]> connectionDeltas = new HashMap<>();
-            for (PacketEvent event : events) {
-                packetStatement.setLong(1, event.getMappingId());
-                packetStatement.setLong(2, event.getConnectionId());
-                packetStatement.setString(3, event.getDirection().name());
-                packetStatement.setLong(4, event.getSequenceNo());
-                packetStatement.setString(5, event.getClientIp());
-                packetStatement.setInt(6, event.getClientPort());
-                packetStatement.setString(7, event.getListenIp());
-                packetStatement.setInt(8, event.getListenPort());
-                packetStatement.setString(9, event.getTargetHost());
-                packetStatement.setInt(10, event.getTargetPort());
-                packetStatement.setString(11, event.getRemoteIp());
-                packetStatement.setInt(12, event.getRemotePort());
-                packetStatement.setBytes(13, emptyToNull(event.getPayloadPreview()));
-                packetStatement.setInt(14, event.getPayloadSize());
-                packetStatement.setInt(15, event.getCapturedSize());
-                packetStatement.setInt(16, event.isTruncated() ? 1 : 0);
-                packetStatement.setString(17, event.getProtocolFamily());
-                packetStatement.setString(18, event.getApplicationProtocol());
-                packetStatement.setString(19, event.getContentType());
-                packetStatement.setString(20, event.getHttpMethod());
-                packetStatement.setString(21, event.getHttpUri());
-                if (event.getHttpStatus() == null) {
-                    packetStatement.setObject(22, null);
-                } else {
-                    packetStatement.setInt(22, event.getHttpStatus());
+        synchronized (packetMutationLock) {
+            List<PayloadFileStore.PayloadWriteResult> payloadWrites = writePayloadFiles(events);
+            String packetSql = "INSERT INTO packet(mapping_id, connection_id, direction, sequence_no, client_ip, client_port, "
+                    + "listen_ip, listen_port, target_host, target_port, remote_ip, remote_port, payload, payload_size, "
+                    + "captured_size, truncated, protocol_family, application_protocol, content_type, http_method, http_uri, http_status, "
+                    + "payload_store_type, payload_file_path, payload_file_offset, payload_file_length, payload_preview_size, "
+                    + "payload_complete, payload_sha256, received_at) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            try (Connection connection = sqliteDatabase.getConnection();
+                 PreparedStatement packetStatement = connection.prepareStatement(packetSql)) {
+                connection.setAutoCommit(false);
+                Map<Long, long[]> connectionDeltas = new HashMap<>();
+                for (PacketEvent event : events) {
+                    packetStatement.setLong(1, event.getMappingId());
+                    packetStatement.setLong(2, event.getConnectionId());
+                    packetStatement.setString(3, event.getDirection().name());
+                    packetStatement.setLong(4, event.getSequenceNo());
+                    packetStatement.setString(5, event.getClientIp());
+                    packetStatement.setInt(6, event.getClientPort());
+                    packetStatement.setString(7, event.getListenIp());
+                    packetStatement.setInt(8, event.getListenPort());
+                    packetStatement.setString(9, event.getTargetHost());
+                    packetStatement.setInt(10, event.getTargetPort());
+                    packetStatement.setString(11, event.getRemoteIp());
+                    packetStatement.setInt(12, event.getRemotePort());
+                    packetStatement.setBytes(13, emptyToNull(event.getPayloadPreview()));
+                    packetStatement.setInt(14, event.getPayloadSize());
+                    packetStatement.setInt(15, event.getCapturedSize());
+                    packetStatement.setInt(16, event.isTruncated() ? 1 : 0);
+                    packetStatement.setString(17, event.getProtocolFamily());
+                    packetStatement.setString(18, event.getApplicationProtocol());
+                    packetStatement.setString(19, event.getContentType());
+                    packetStatement.setString(20, event.getHttpMethod());
+                    packetStatement.setString(21, event.getHttpUri());
+                    if (event.getHttpStatus() == null) {
+                        packetStatement.setObject(22, null);
+                    } else {
+                        packetStatement.setInt(22, event.getHttpStatus());
+                    }
+                    packetStatement.setString(23, event.getPayloadStoreType());
+                    packetStatement.setString(24, event.getPayloadFilePath());
+                    if (event.getPayloadFileOffset() == null) {
+                        packetStatement.setObject(25, null);
+                    } else {
+                        packetStatement.setLong(25, event.getPayloadFileOffset());
+                    }
+                    if (event.getPayloadFileLength() == null) {
+                        packetStatement.setObject(26, null);
+                    } else {
+                        packetStatement.setInt(26, event.getPayloadFileLength());
+                    }
+                    packetStatement.setInt(27, event.getPayloadPreviewSize());
+                    packetStatement.setInt(28, event.isPayloadComplete() ? 1 : 0);
+                    packetStatement.setString(29, event.getPayloadSha256());
+                    packetStatement.setString(30, event.getReceivedAt());
+                    packetStatement.addBatch();
+                    addDelta(connectionDeltas, event);
                 }
-                packetStatement.setString(23, event.getPayloadStoreType());
-                packetStatement.setString(24, event.getPayloadFilePath());
-                if (event.getPayloadFileOffset() == null) {
-                    packetStatement.setObject(25, null);
-                } else {
-                    packetStatement.setLong(25, event.getPayloadFileOffset());
-                }
-                if (event.getPayloadFileLength() == null) {
-                    packetStatement.setObject(26, null);
-                } else {
-                    packetStatement.setInt(26, event.getPayloadFileLength());
-                }
-                packetStatement.setInt(27, event.getPayloadPreviewSize());
-                packetStatement.setInt(28, event.isPayloadComplete() ? 1 : 0);
-                packetStatement.setString(29, event.getPayloadSha256());
-                packetStatement.setString(30, event.getReceivedAt());
-                packetStatement.addBatch();
-                addDelta(connectionDeltas, event);
+                packetStatement.executeBatch();
+                updateConnectionBytes(connection, connectionDeltas);
+                connection.commit();
+            } catch (SQLException e) {
+                rollbackPayloadFiles(payloadWrites);
+                throw new RuntimeException("insert packet batch failed", e);
             }
-            packetStatement.executeBatch();
-            updateConnectionBytes(connection, connectionDeltas);
-            connection.commit();
-        } catch (SQLException e) {
-            rollbackPayloadFiles(payloadWrites);
-            throw new RuntimeException("insert packet batch failed", e);
+        }
+    }
+
+    public PurgeResult purgeAll() {
+        synchronized (packetMutationLock) {
+            long deletedPackets = deletePackets("DELETE FROM packet", Collections.emptyList());
+            PayloadFileStore.DeleteResult deletedFiles = payloadFileStore == null
+                    ? PayloadFileStore.DeleteResult.empty()
+                    : payloadFileStore.deleteAllSegments();
+            return new PurgeResult(deletedPackets, deletedFiles.getDeletedFiles(), deletedFiles.getDeletedBytes());
+        }
+    }
+
+    public PurgeResult purgeBeforeDate(String keepDateExclusive) {
+        if (keepDateExclusive == null || keepDateExclusive.trim().length() == 0) {
+            throw new IllegalArgumentException("keepDateExclusive is required");
+        }
+        synchronized (packetMutationLock) {
+            long deletedPackets = deletePackets(
+                    "DELETE FROM packet WHERE substr(received_at, 1, 10) < ?",
+                    Collections.<Object>singletonList(keepDateExclusive));
+            PayloadFileStore.DeleteResult deletedFiles = payloadFileStore == null
+                    ? PayloadFileStore.DeleteResult.empty()
+                    : payloadFileStore.deleteSegmentsBeforeDate(keepDateExclusive);
+            return new PurgeResult(deletedPackets, deletedFiles.getDeletedFiles(), deletedFiles.getDeletedBytes());
         }
     }
 
@@ -291,6 +321,16 @@ public class PacketRepository {
 
     private byte[] emptyToNull(byte[] bytes) {
         return bytes == null || bytes.length == 0 ? null : bytes;
+    }
+
+    private long deletePackets(String sql, List<Object> params) {
+        try (Connection connection = sqliteDatabase.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            bindParams(statement, params, 1);
+            return statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("purge packets failed", e);
+        }
     }
 
     private long count(QueryParts queryParts) {
@@ -537,5 +577,32 @@ public class PacketRepository {
         public boolean payloadComplete;
 
         public String payloadSha256;
+    }
+
+    public static class PurgeResult {
+
+        private final long deletedPackets;
+
+        private final int deletedPayloadFiles;
+
+        private final long deletedPayloadBytes;
+
+        public PurgeResult(long deletedPackets, int deletedPayloadFiles, long deletedPayloadBytes) {
+            this.deletedPackets = deletedPackets;
+            this.deletedPayloadFiles = deletedPayloadFiles;
+            this.deletedPayloadBytes = deletedPayloadBytes;
+        }
+
+        public long getDeletedPackets() {
+            return deletedPackets;
+        }
+
+        public int getDeletedPayloadFiles() {
+            return deletedPayloadFiles;
+        }
+
+        public long getDeletedPayloadBytes() {
+            return deletedPayloadBytes;
+        }
     }
 }

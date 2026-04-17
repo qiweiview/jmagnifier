@@ -580,6 +580,11 @@ a:focus-visible {
   padding: var(--panel-padding);
 }
 
+.panel-stack {
+  display: grid;
+  gap: 12px;
+}
+
 .form-grid {
   display: grid;
   gap: 12px;
@@ -712,6 +717,16 @@ td.actions {
   color: var(--warn);
 }
 
+.status.starting {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.status.stopping {
+  background: rgba(255, 243, 214, 0.95);
+  color: var(--warn);
+}
+
 .muted {
   color: var(--muted);
 }
@@ -725,6 +740,10 @@ td.actions {
   margin: 0;
   color: var(--danger);
   font-size: 13px;
+}
+
+.form-message.success {
+  color: var(--good);
 }
 
 .table-empty {
@@ -787,6 +806,10 @@ td.actions {
   max-height: min(860px, 92vh);
 }
 
+.modal-mapping-editor .modal-panel {
+  width: min(760px, 96vw);
+}
+
 .modal-head {
   position: sticky;
   top: 0;
@@ -804,6 +827,57 @@ td.actions {
 .modal-head h2 {
   margin: 0;
   font-size: 17px;
+}
+
+.modal-body-shell {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.modal-copy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modal-danger-shell {
+  gap: 16px;
+}
+
+.modal-actions-danger {
+  justify-content: flex-start;
+}
+
+.danger-note-list {
+  display: grid;
+  gap: 10px;
+}
+
+.danger-note {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(194, 65, 78, 0.14);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 245, 246, 0.92) 0%, rgba(255, 255, 255, 0.96) 100%);
+}
+
+.danger-note strong {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.danger-note span {
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .detail-grid {

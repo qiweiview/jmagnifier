@@ -34,6 +34,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.net.InetSocketAddress;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -147,6 +149,8 @@ public class NettyAdminServer {
                     connectionDetail(requiredId(params, "id")));
             authenticatedRouter.add(HttpMethod.GET, "/api/packets", (request, params) ->
                     JsonResponse.success(packetPage(readPacketQuery(new QueryStringDecoder(request.uri())))));
+            authenticatedRouter.add(HttpMethod.POST, "/api/packets/purge", (request, params) ->
+                    JsonResponse.success(packetPurge(request)));
             authenticatedRouter.add(HttpMethod.GET, "/api/packets/{id}", (request, params) ->
                     packetDetail(requiredId(params, "id")));
             authenticatedRouter.add(HttpMethod.GET, "/api/packets/{id}/payload", (request, params) ->
@@ -426,6 +430,31 @@ public class NettyAdminServer {
             return JsonResponse.success(toPacketDetail(record));
         }
 
+        private Map<String, Object> packetPurge(FullHttpRequest request) {
+            Map<String, Object> body = readJsonMap(request);
+            String scope = stringValue(body.get("scope"));
+            if (!"ALL".equals(scope) && !"NON_TODAY".equals(scope)) {
+                throw new IllegalArgumentException("scope must be ALL or NON_TODAY");
+            }
+            PacketRepository.PurgeResult result;
+            String keptDate = null;
+            if ("ALL".equals(scope)) {
+                result = packetRepository.purgeAll();
+            } else {
+                keptDate = currentPacketDate();
+                result = packetRepository.purgeBeforeDate(keptDate);
+            }
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("scope", scope);
+            if (keptDate != null) {
+                data.put("keptDate", keptDate);
+            }
+            data.put("deletedPackets", result.getDeletedPackets());
+            data.put("deletedPayloadFiles", result.getDeletedPayloadFiles());
+            data.put("deletedPayloadBytes", result.getDeletedPayloadBytes());
+            return data;
+        }
+
         private FullHttpResponse packetPayload(long packetId) {
             PacketRepository.PacketRecord record = packetRepository.findById(packetId);
             if (record == null) {
@@ -686,6 +715,10 @@ public class NettyAdminServer {
 
         private String stringValue(Object value) {
             return value == null ? null : String.valueOf(value);
+        }
+
+        private String currentPacketDate() {
+            return Instant.now().atZone(ZoneOffset.UTC).toLocalDate().toString();
         }
 
         private String stringParam(Map<String, List<String>> params, String name) {

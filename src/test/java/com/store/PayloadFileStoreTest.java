@@ -81,4 +81,27 @@ public class PayloadFileStoreTest {
             FileUtils.deleteDirectory(dir);
         }
     }
+
+    @Test
+    public void shouldDeleteOnlySegmentsBeforeKeepDate() throws Exception {
+        File dir = Files.createTempDirectory("payload-store-purge-date-test").toFile();
+        try {
+            PayloadFileStore store = new PayloadFileStore(dir.getAbsolutePath(), 1024 * 1024);
+            PayloadFileStore.PayloadWriteResult older = store.write(1L, "2026-04-15T08:00:00Z",
+                    "older".getBytes(StandardCharsets.UTF_8), true);
+            PayloadFileStore.PayloadWriteResult kept = store.write(1L, "2026-04-17T08:00:00Z",
+                    "kept".getBytes(StandardCharsets.UTF_8), true);
+
+            PayloadFileStore.DeleteResult result = store.deleteSegmentsBeforeDate("2026-04-17");
+
+            Assert.assertEquals(1, result.getDeletedFiles());
+            Assert.assertTrue(result.getDeletedRelativePaths().contains(older.getRelativePath()));
+            Assert.assertFalse(store.exists(older.getRelativePath()));
+            Assert.assertTrue(store.exists(kept.getRelativePath()));
+            Assert.assertFalse(new File(dir, "2026-04-15").exists());
+            Assert.assertTrue(new File(dir, "2026-04-17").exists());
+        } finally {
+            FileUtils.deleteDirectory(dir);
+        }
+    }
 }
