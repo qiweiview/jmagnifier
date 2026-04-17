@@ -14,7 +14,11 @@
     mappings: [],
     connectionPage: 1,
     packetPage: 1,
-    packetDetail: null
+    packetDetail: null,
+    mappingActionPending: {},
+    mappingEditor: defaultMappingEditorState(),
+    packetPurge: defaultPacketPurgeState(),
+    modalType: null
   };
   var ROUTE_META = {
     '/': { kicker: '控制台', title: '运行状态' },
@@ -61,6 +65,8 @@
       RUNNING: '运行中',
       STOPPED: '已停止',
       FAILED: '失败',
+      STARTING: '启动中',
+      STOPPING: '停止中',
       OPENING: '连接中',
       OPEN: '已连接',
       CLOSED: '已关闭',
@@ -180,10 +186,37 @@
   }
 
   function setError(target, error) {
+    setMessage(target, error && error.message ? error.message : '', 'error');
+  }
+
+  function setMessage(target, message, tone) {
     var node = document.getElementById(target);
     if (node) {
-      node.textContent = error && error.message ? error.message : '';
+      node.textContent = message || '';
+      node.classList.remove('success');
+      if (tone === 'success') {
+        node.classList.add('success');
+      }
     }
+  }
+
+  function defaultMappingEditorState() {
+    return {
+      open: false,
+      mode: 'create',
+      mappingId: null,
+      submitting: false,
+      dirty: false,
+      initialValue: ''
+    };
+  }
+
+  function defaultPacketPurgeState() {
+    return {
+      open: false,
+      submitting: false,
+      error: null
+    };
   }
 
   function statusBadge(status) {
@@ -221,6 +254,8 @@
           metric('抓包队列', data.captureQueueSize + ' / ' + data.captureQueueCapacity),
           metric('落盘文件', data.spillFileCount),
           metric('落盘字节', data.spillBytes),
+          metric('Payload 段文件', data.payloadFilesActive),
+          metric('Payload 占用', data.payloadBytesOnDisk),
           metric('已写入报文', data.packetsWritten),
           metric('已落盘报文', data.packetsSpilled),
           metric('已丢弃报文', data.packetsDropped),
@@ -861,6 +896,8 @@
     }
     if (packetFullPayloadAvailable(data)) {
       notices.push(packetFullPayloadComplete(data) ? '完整 payload 可下载' : '已保存受限完整 payload，下载内容可能仍不完整');
+    } else if (packetStoreType(data) === 'FILE_DELETED') {
+      notices.push('完整 payload 已被清理，当前仅可下载预览');
     } else if (packetStoreType(data) === 'FILE') {
       notices.push('完整 payload 文件不可用，当前下载将回退为预览');
     } else {

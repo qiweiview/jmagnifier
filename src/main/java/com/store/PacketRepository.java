@@ -36,7 +36,7 @@ public class PacketRepository {
         if (events == null || events.size() == 0) {
             return;
         }
-        writePayloadFiles(events);
+        List<PayloadFileStore.PayloadWriteResult> payloadWrites = writePayloadFiles(events);
         String packetSql = "INSERT INTO packet(mapping_id, connection_id, direction, sequence_no, client_ip, client_port, "
                 + "listen_ip, listen_port, target_host, target_port, remote_ip, remote_port, payload, payload_size, "
                 + "captured_size, truncated, protocol_family, application_protocol, content_type, http_method, http_uri, http_status, "
@@ -97,6 +97,7 @@ public class PacketRepository {
             updateConnectionBytes(connection, connectionDeltas);
             connection.commit();
         } catch (SQLException e) {
+            rollbackPayloadFiles(payloadWrites);
             throw new RuntimeException("insert packet batch failed", e);
         }
     }
@@ -166,11 +167,8 @@ public class PacketRepository {
         if (record == null) {
             return new byte[0];
         }
-        if (record.payloadStoreType == PayloadStoreType.FILE
-                && payloadFileStore != null
-                && record.payloadFilePath != null
-                && record.payloadFileOffset != null
-                && record.payloadFileLength != null) {
+        PayloadFileStore.PayloadReadHandle readHandle = openPayloadReadHandle(record);
+        if (readHandle != null) {
             try {
                 return payloadFileStore.read(record.payloadFilePath, record.payloadFileOffset, record.payloadFileLength);
             } catch (RuntimeException e) {
@@ -187,7 +185,47 @@ public class PacketRepository {
                 && payloadFileStore.exists(record.payloadFilePath);
     }
 
-    private void writePayloadFiles(List<PacketEvent> events) {
+    public PayloadFileStore.PayloadReadHandle openPayloadReadHandle(PacketRecord record) {
+        if (record == null
+                || record.payloadStoreType != PayloadStoreType.FILE
+                || payloadFileStore == null
+                || record.payloadFilePath == null
+                || record.payloadFileOffset == null
+                || record.payloadFileLength == null) {
+            return null;
+        }
+        try {
+            return payloadFileStore.openReadHandle(record.payloadFilePath, record.payloadFileOffset, record.payloadFileLength);
+        } catch (RuntimeException e) {
+            log.warn("open payload file failed for packet {} cause:{}", record.id, e.getMessage());
+            return null;
+        }
+    }
+
+    public void markPayloadFilesDeleted(List<String> relativePaths) {
+        if (relativePaths == null || relativePaths.isEmpty()) {
+            return;
+        }
+        String sql = "UPDATE packet SET payload_store_type = ?, payload_complete = 0 WHERE payload_file_path = ? AND payload_store_type = ?";
+        try (Connection connection = sqliteDatabase.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (String relativePath : relativePaths) {
+                if (relativePath == null || relativePath.trim().length() == 0) {
+                    continue;
+                }
+                statement.setString(1, PayloadStoreType.FILE_DELETED.name());
+                statement.setString(2, relativePath);
+                statement.setString(3, PayloadStoreType.FILE.name());
+                statement.addBatch();
+            }
+            statement.executeBatch();
+        } catch (SQLException e) {
+            throw new RuntimeException("mark payload files deleted failed", e);
+        }
+    }
+
+    private List<PayloadFileStore.PayloadWriteResult> writePayloadFiles(List<PacketEvent> events) {
+        List<PayloadFileStore.PayloadWriteResult> writes = new ArrayList<>();
         for (PacketEvent event : events) {
             normalizePayloadMetadata(event);
             if (payloadFileStore == null || PayloadStoreType.fromConfig(event.getPayloadStoreType()) != PayloadStoreType.FILE) {
@@ -199,6 +237,7 @@ public class PacketRepository {
                         event.getReceivedAt(),
                         event.getPayload(),
                         event.isPayloadComplete());
+                writes.add(result);
                 event.setPayloadFilePath(result.getRelativePath());
                 event.setPayloadFileOffset(result.getOffset());
                 event.setPayloadFileLength(result.getLength());
@@ -213,6 +252,18 @@ public class PacketRepository {
                 event.setPayloadSha256(null);
                 event.setPayloadComplete(false);
             }
+        }
+        return writes;
+    }
+
+    private void rollbackPayloadFiles(List<PayloadFileStore.PayloadWriteResult> payloadWrites) {
+        if (payloadFileStore == null || payloadWrites == null || payloadWrites.isEmpty()) {
+            return;
+        }
+        try {
+            payloadFileStore.rollback(payloadWrites);
+        } catch (RuntimeException rollbackError) {
+            log.warn("rollback orphan payload files failed cause:{}", rollbackError.getMessage());
         }
     }
 

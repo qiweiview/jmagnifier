@@ -9,12 +9,14 @@ store:
   spillDir: "./data/spill"
   payloadDir: "./data/payload"
   payloadSegmentBytes: 134217728
+  payloadRetentionDays: 7
+  payloadRetentionBytes: 21474836480
 
 capture:
   enabled: true
-  maxCaptureBytes: 40960
-  previewBytes: 4096
-  payloadStoreType: "PREVIEW_ONLY"
+  maxCaptureBytes: 409600
+  previewBytes: 409600
+  payloadStoreType: "FILE"
   maxPayloadBytes: 0
   queueCapacity: 10000
   batchSize: 100

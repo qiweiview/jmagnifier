@@ -17,6 +17,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 public class AppRuntime {
 
@@ -32,9 +36,15 @@ public class AppRuntime {
 
     private final MappingRepository mappingRepository;
 
+    private final PayloadFileStore payloadFileStore;
+
+    private final PacketRepository packetRepository;
+
     private final PacketCaptureService packetCaptureService;
 
     private final NettyAdminServer nettyAdminServer;
+
+    private ScheduledExecutorService payloadRetentionExecutor;
 
     public AppRuntime(GlobalConfig globalConfig) {
         this.globalConfig = globalConfig;
@@ -51,22 +61,22 @@ public class AppRuntime {
         new DatabaseInitializer(sqliteDatabase).initialize();
         this.mappingRepository = new MappingRepository(sqliteDatabase);
         ConnectionRepository connectionRepository = new ConnectionRepository(sqliteDatabase);
-        PayloadFileStore payloadFileStore = new PayloadFileStore(
+        this.payloadFileStore = new PayloadFileStore(
                 globalConfig.getStore().getPayloadDir(),
                 globalConfig.getStore().getPayloadSegmentBytes());
-        PacketRepository packetRepository = new PacketRepository(sqliteDatabase, payloadFileStore);
+        this.packetRepository = new PacketRepository(sqliteDatabase, payloadFileStore);
         this.packetCaptureService = new PacketCaptureService(
                 new CaptureOptions(globalConfig.getCapture()),
-                packetRepository,
+                this.packetRepository,
                 new SpillFileManager(globalConfig.getStore().getSpillDir()));
         this.nettyGroups = new NettyGroups();
         this.runtimeMappingManager = new RuntimeMappingManager(nettyGroups, mappingRepository, connectionRepository, packetCaptureService);
         this.nettyAdminServer = new NettyAdminServer(globalConfig.getAdmin(), runtimeMappingManager, packetCaptureService, nettyGroups,
-                connectionRepository, packetRepository);
+                connectionRepository, this.packetRepository, this.payloadFileStore);
     }
 
     public void start() {
-        log.info("抓包配置生效值 enabled={}, previewBytes={}, payloadStoreType={}, maxPayloadBytes={}, queueCapacity={}, batchSize={}, flushIntervalMillis={}, sqlitePath={}, spillDir={}, payloadDir={}, payloadSegmentBytes={}",
+        log.info("抓包配置生效值：enabled={}, previewBytes={}, payloadStoreType={}, maxPayloadBytes={}, queueCapacity={}, batchSize={}, flushIntervalMillis={}, sqlitePath={}, spillDir={}, payloadDir={}, payloadSegmentBytes={}, payloadRetentionDays={}, payloadRetentionBytes={}",
                 packetCaptureService.isEnabled(),
                 packetCaptureService.getPreviewBytes(),
                 packetCaptureService.getPayloadStoreType(),
@@ -77,8 +87,12 @@ public class AppRuntime {
                 globalConfig.getStore().getSqlitePath(),
                 globalConfig.getStore().getSpillDir(),
                 globalConfig.getStore().getPayloadDir(),
-                globalConfig.getStore().getPayloadSegmentBytes());
+                globalConfig.getStore().getPayloadSegmentBytes(),
+                globalConfig.getStore().getPayloadRetentionDays(),
+                globalConfig.getStore().getPayloadRetentionBytes());
         packetCaptureService.start();
+        runPayloadRetention("startup");
+        startPayloadRetentionScheduler();
         List<MappingEntity> persistedMappings = mappingRepository.findAllActive();
         if (persistedMappings.size() > 0) {
             log.info("从 SQLite 恢复 {} 个 mapping", persistedMappings.size());
@@ -97,10 +111,66 @@ public class AppRuntime {
         nettyAdminServer.stop();
         runtimeMappingManager.shutdown();
         packetCaptureService.shutdown();
+        stopPayloadRetentionScheduler();
         nettyGroups.shutdown();
     }
 
     public RuntimeMappingManager getRuntimeMappingManager() {
         return runtimeMappingManager;
+    }
+
+    private void startPayloadRetentionScheduler() {
+        if (!isPayloadRetentionEnabled()) {
+            return;
+        }
+        payloadRetentionExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable runnable) {
+                Thread thread = new Thread(runnable, "payload-retention-cleaner");
+                thread.setDaemon(true);
+                return thread;
+            }
+        });
+        payloadRetentionExecutor.scheduleAtFixedRate(new Runnable() {
+            @Override
+            public void run() {
+                runPayloadRetention("scheduled");
+            }
+        }, 1, 1, TimeUnit.HOURS);
+    }
+
+    private void stopPayloadRetentionScheduler() {
+        if (payloadRetentionExecutor == null) {
+            return;
+        }
+        payloadRetentionExecutor.shutdownNow();
+        payloadRetentionExecutor = null;
+    }
+
+    private boolean isPayloadRetentionEnabled() {
+        return globalConfig.getStore().getPayloadRetentionDays() > 0
+                || globalConfig.getStore().getPayloadRetentionBytes() > 0;
+    }
+
+    private void runPayloadRetention(String trigger) {
+        if (!isPayloadRetentionEnabled()) {
+            return;
+        }
+        try {
+            PayloadFileStore.RetentionResult result = payloadFileStore.enforceRetention(
+                    globalConfig.getStore().getPayloadRetentionDays(),
+                    globalConfig.getStore().getPayloadRetentionBytes());
+            if (result.getDeletedFiles() > 0) {
+                packetRepository.markPayloadFilesDeleted(result.getDeletedRelativePaths());
+                log.info("payload retention {} deletedFiles={}, deletedBytes={}, payloadFilesActive={}, payloadBytesOnDisk={}",
+                        trigger,
+                        result.getDeletedFiles(),
+                        result.getDeletedBytes(),
+                        payloadFileStore.countSegmentFiles(),
+                        payloadFileStore.totalPayloadBytes());
+            }
+        } catch (RuntimeException e) {
+            log.warn("payload retention {} failed cause:{}", trigger, e.getMessage());
+        }
     }
 }

@@ -10,6 +10,10 @@ public class StoreConfig {
 
     private long payloadSegmentBytes = 128L * 1024L * 1024L;
 
+    private int payloadRetentionDays = 7;
+
+    private long payloadRetentionBytes = 20L * 1024L * 1024L * 1024L;
+
     public String getSqlitePath() {
         return sqlitePath;
     }
@@ -40,5 +44,21 @@ public class StoreConfig {
 
     public void setPayloadSegmentBytes(long payloadSegmentBytes) {
         this.payloadSegmentBytes = payloadSegmentBytes;
+    }
+
+    public int getPayloadRetentionDays() {
+        return payloadRetentionDays;
+    }
+
+    public void setPayloadRetentionDays(int payloadRetentionDays) {
+        this.payloadRetentionDays = payloadRetentionDays;
+    }
+
+    public long getPayloadRetentionBytes() {
+        return payloadRetentionBytes;
+    }
+
+    public void setPayloadRetentionBytes(long payloadRetentionBytes) {
+        this.payloadRetentionBytes = payloadRetentionBytes;
     }
 }

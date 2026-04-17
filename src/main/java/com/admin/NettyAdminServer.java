@@ -14,6 +14,7 @@ import com.capture.PayloadStoreType;
 import com.store.ConnectionRepository;
 import com.store.PacketRepository;
 import com.store.PageResult;
+import com.store.PayloadFileStore;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
@@ -22,6 +23,8 @@ import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
+import io.netty.handler.codec.http.HttpChunkedInput;
+import io.netty.handler.stream.ChunkedFile;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,12 +32,17 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
 import java.net.InetSocketAddress;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class NettyAdminServer {
 
     private static final Logger log = LoggerFactory.getLogger(NettyAdminServer.class);
+
+    private static final Pattern PACKET_PAYLOAD_PATH = Pattern.compile("^/api/packets/(\\d+)/payload$");
 
     private final AdminConfig adminConfig;
 
@@ -46,6 +54,8 @@ public class NettyAdminServer {
 
     private final PacketRepository packetRepository;
 
+    private final PayloadFileStore payloadFileStore;
+
     private final NettyGroups nettyGroups;
 
     private final AdminSessionManager sessionManager;
@@ -54,12 +64,14 @@ public class NettyAdminServer {
 
     public NettyAdminServer(AdminConfig adminConfig, RuntimeMappingManager mappingManager,
                             PacketCaptureService packetCaptureService, NettyGroups nettyGroups,
-                            ConnectionRepository connectionRepository, PacketRepository packetRepository) {
+                            ConnectionRepository connectionRepository, PacketRepository packetRepository,
+                            PayloadFileStore payloadFileStore) {
         this.adminConfig = adminConfig;
         this.mappingManager = mappingManager;
         this.packetCaptureService = packetCaptureService;
         this.connectionRepository = connectionRepository;
         this.packetRepository = packetRepository;
+        this.payloadFileStore = payloadFileStore;
         this.nettyGroups = nettyGroups;
         this.sessionManager = new AdminSessionManager(adminConfig.getSessionTimeoutMinutes());
     }
@@ -149,6 +161,9 @@ public class NettyAdminServer {
         protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) {
             FullHttpResponse response;
             try {
+                if (tryWriteStreamedPacketPayload(ctx, request)) {
+                    return;
+                }
                 response = route(request);
             } catch (AdminApiException e) {
                 response = JsonResponse.error(e.getStatus(), e.getCode(), e.getMessage());
@@ -160,6 +175,24 @@ public class NettyAdminServer {
                 response = JsonResponse.error(HttpResponseStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", e.getMessage());
             }
             write(ctx, request, response);
+        }
+
+        private boolean tryWriteStreamedPacketPayload(ChannelHandlerContext ctx, FullHttpRequest request) {
+            if (!HttpMethod.GET.equals(request.method())) {
+                return false;
+            }
+            String path = new QueryStringDecoder(request.uri()).path();
+            Matcher matcher = PACKET_PAYLOAD_PATH.matcher(path);
+            if (!matcher.matches()) {
+                return false;
+            }
+            String sessionId = sessionId(request);
+            if (!sessionManager.isValid(sessionId)) {
+                write(ctx, request, JsonResponse.error(HttpResponseStatus.UNAUTHORIZED, "UNAUTHORIZED", "login required"));
+                return true;
+            }
+            writePacketPayloadResponse(ctx, request, Long.parseLong(matcher.group(1)));
+            return true;
         }
 
         private FullHttpResponse route(FullHttpRequest request) {
@@ -398,6 +431,24 @@ public class NettyAdminServer {
             if (record == null) {
                 return JsonResponse.error(HttpResponseStatus.NOT_FOUND, "NOT_FOUND", "packet not found");
             }
+            return previewPayloadResponse(record);
+        }
+
+        private void writePacketPayloadResponse(ChannelHandlerContext ctx, FullHttpRequest request, long packetId) {
+            PacketRepository.PacketRecord record = packetRepository.findById(packetId);
+            if (record == null) {
+                write(ctx, request, JsonResponse.error(HttpResponseStatus.NOT_FOUND, "NOT_FOUND", "packet not found"));
+                return;
+            }
+            PayloadFileStore.PayloadReadHandle readHandle = packetRepository.openPayloadReadHandle(record);
+            if (readHandle == null) {
+                write(ctx, request, previewPayloadResponse(record));
+                return;
+            }
+            streamPayloadFile(ctx, request, record, readHandle);
+        }
+
+        private FullHttpResponse previewPayloadResponse(PacketRepository.PacketRecord record) {
             boolean hasFullPayload = packetRepository.hasPayloadFile(record);
             boolean previewComplete = !record.truncated && record.capturedSize >= record.payloadSize;
             boolean responseComplete = hasFullPayload ? record.payloadComplete : previewComplete;
@@ -406,11 +457,63 @@ public class NettyAdminServer {
                     HttpResponseStatus.OK, Unpooled.wrappedBuffer(payload));
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/octet-stream");
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, payload.length);
-            response.headers().set("Content-Disposition", "attachment; filename=\"packet-" + packetId + ".bin\"");
+            response.headers().set("Content-Disposition", "attachment; filename=\"packet-" + record.id + ".bin\"");
             response.headers().set("X-Payload-Store-Type", record.payloadStoreType == null ? PayloadStoreType.PREVIEW_ONLY.name() : record.payloadStoreType.name());
             response.headers().set("X-Payload-Complete", Boolean.toString(responseComplete));
             response.headers().set("X-Payload-Truncated", Boolean.toString(!responseComplete));
             return response;
+        }
+
+        private void streamPayloadFile(ChannelHandlerContext ctx, FullHttpRequest request,
+                                       PacketRepository.PacketRecord record,
+                                       PayloadFileStore.PayloadReadHandle readHandle) {
+            RandomAccessFile randomAccessFile;
+            try {
+                randomAccessFile = new RandomAccessFile(readHandle.getFile(), "r");
+            } catch (IOException e) {
+                write(ctx, request, previewPayloadResponse(record));
+                return;
+            }
+            boolean keepAlive = HttpUtil.isKeepAlive(request);
+            HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+            response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/octet-stream");
+            response.headers().set(HttpHeaderNames.CONTENT_LENGTH, readHandle.getLength());
+            response.headers().set("Content-Disposition", "attachment; filename=\"packet-" + record.id + ".bin\"");
+            response.headers().set("X-Payload-Store-Type", record.payloadStoreType == null ? PayloadStoreType.FILE.name() : record.payloadStoreType.name());
+            response.headers().set("X-Payload-Complete", Boolean.toString(readHandle.isComplete()));
+            response.headers().set("X-Payload-Truncated", Boolean.toString(!readHandle.isComplete()));
+            if (keepAlive) {
+                response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+            }
+            ChunkedFile chunkedFile;
+            try {
+                chunkedFile = new ChunkedFile(randomAccessFile, readHandle.getPayloadOffset(), readHandle.getLength(), 8192);
+            } catch (IOException e) {
+                try {
+                    randomAccessFile.close();
+                } catch (IOException ignore) {
+                }
+                write(ctx, request, previewPayloadResponse(record));
+                return;
+            }
+            ctx.write(response);
+            ChannelFuture sendFileFuture = ctx.write(new HttpChunkedInput(chunkedFile),
+                    ctx.newProgressivePromise());
+            ChannelFuture lastContentFuture = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+            ChannelFutureListener closeFileListener = new ChannelFutureListener() {
+                @Override
+                public void operationComplete(ChannelFuture future) {
+                    try {
+                        randomAccessFile.close();
+                    } catch (IOException ignore) {
+                    }
+                }
+            };
+            sendFileFuture.addListener(closeFileListener);
+            lastContentFuture.addListener(closeFileListener);
+            if (!keepAlive) {
+                lastContentFuture.addListener(ChannelFutureListener.CLOSE);
+            }
         }
 
         private List<Map<String, Object>> mappingList() {
@@ -446,6 +549,8 @@ public class NettyAdminServer {
             data.put("captureQueueCapacity", packetCaptureService.getQueueCapacity());
             data.put("spillFileCount", packetCaptureService.getSpillFileCount());
             data.put("spillBytes", packetCaptureService.getSpillBytes());
+            data.put("payloadFilesActive", payloadFileStore == null ? 0 : payloadFileStore.countSegmentFiles());
+            data.put("payloadBytesOnDisk", payloadFileStore == null ? 0 : payloadFileStore.totalPayloadBytes());
             data.put("packetsWritten", packetCaptureService.getPacketsWritten());
             data.put("packetsSpilled", packetCaptureService.getPacketsSpilled());
             data.put("packetsDropped", packetCaptureService.getPacketsDropped());
