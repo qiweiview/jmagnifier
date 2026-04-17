@@ -14,18 +14,42 @@
     mappings: [],
     connectionPage: 1,
     packetPage: 1,
+    connectionLoading: false,
+    packetLoading: false,
     packetDetail: null,
+    pendingPacketFilters: null,
     mappingActionPending: {},
     mappingEditor: defaultMappingEditorState(),
     packetPurge: defaultPacketPurgeState(),
-    modalType: null
+    confirmDialog: defaultConfirmDialogState(),
+    modalType: null,
+    modalReturnFocus: null
   };
   var ROUTE_META = {
-    '/': { kicker: '控制台', title: '运行状态' },
-    '/mappings': { kicker: '配置管理', title: '映射配置' },
-    '/connections': { kicker: '连接追踪', title: '连接记录' },
-    '/packets': { kicker: '抓包分析', title: '报文记录' }
+    '/': { kicker: '运行巡检', title: '运行状态' },
+    '/mappings': { kicker: '映射维护', title: '映射配置' },
+    '/connections': { kicker: '连接排查', title: '连接记录' },
+    '/packets': { kicker: '报文分析', title: '报文记录' }
   };
+  var PAGE_COPY = {
+    runtime: {
+      title: '运行状态',
+      subtitle: '查看映射运行情况、抓包写入状态和最近异常，适合巡检时快速确认系统健康度。'
+    },
+    mappings: {
+      title: '映射配置',
+      subtitle: '新建、修改、启停转发映射。变更会立即影响对应监听端口和转发行为。'
+    },
+    connections: {
+      title: '连接记录',
+      subtitle: '按映射、客户端和时间范围筛选连接，查看生命周期并继续追踪相关报文。'
+    },
+    packets: {
+      title: '报文记录',
+      subtitle: '按连接、映射和时间范围筛选已捕获报文，查看内容预览并按范围清理历史数据。'
+    }
+  };
+  var FILTER_TIME_PLACEHOLDER = '2026-04-17 10:30:00';
   var FIELD_LABELS = {
     mappingId: '映射 ID',
     clientIp: '客户端 IP',
@@ -207,15 +231,33 @@
       mappingId: null,
       submitting: false,
       dirty: false,
-      initialValue: ''
+      initialValue: '',
+      draftValue: null
     };
   }
 
   function defaultPacketPurgeState() {
     return {
       open: false,
+      step: 'select',
+      scope: null,
       submitting: false,
       error: null
+    };
+  }
+
+  function defaultConfirmDialogState() {
+    return {
+      open: false,
+      title: '',
+      description: '',
+      confirmLabel: '确认',
+      cancelLabel: '取消',
+      tone: 'default',
+      action: null,
+      submitting: false,
+      error: null,
+      returnTo: null
     };
   }
 
@@ -224,16 +266,24 @@
     return '<span class="status ' + escapeHtml(value) + '">' + escapeHtml(translateStatus(status)) + '</span>';
   }
 
-  function metric(label, value) {
-    return '<div class="metric"><div class="label">' + escapeHtml(label) + '</div><div class="value">' + escapeHtml(value) + '</div></div>';
+  function metric(label, value, tone) {
+    return '<div class="metric' + (tone ? ' metric-' + escapeHtml(tone) : '') + '"><div class="label">' + escapeHtml(label) + '</div><div class="value">' + escapeHtml(value) + '</div></div>';
   }
 
-  function pageHead(title, subtitle, action) {
-    return '<section class="page-hero"><div><p class="eyebrow">Adaptive Layered Simplicity</p><h1>' + escapeHtml(title) + '</h1><p class="page-copy">' + escapeHtml(subtitle || '') + '</p></div>' + (action ? '<div class="hero-actions">' + action + '</div>' : '') + '</section>';
+  function pageHead(title, subtitle, action, meta) {
+    return '<section class="page-hero"><div class="page-intro"><h1>' + escapeHtml(title) + '</h1><p class="page-copy">' + escapeHtml(subtitle || '') + '</p>' +
+      (meta ? '<div class="page-context-meta">' + meta + '</div>' : '') +
+      '</div>' + (action ? '<div class="hero-actions">' + action + '</div>' : '') + '</section>';
   }
 
   function heroBadge(text) {
     return '<span class="hero-badge">' + escapeHtml(text) + '</span>';
+  }
+
+  function badgeGroup(items) {
+    return (items || []).filter(function (item) {
+      return !!item;
+    }).map(heroBadge).join('');
   }
 
   function emptyTableRow(colspan, message) {
@@ -242,27 +292,52 @@
 
   function renderRuntime() {
     clearTimer();
-    view.innerHTML = pageHead('运行状态', '进程实时状态与抓包统计', heroBadge('自动刷新 3 秒') + heroBadge('白蓝简洁视图')) + '<div id="runtime-metrics" class="grid metrics"></div>';
+    view.innerHTML = pageHead(PAGE_COPY.runtime.title, PAGE_COPY.runtime.subtitle, '', '<div id="runtime-context-meta">' + badgeGroup(['每 3 秒自动刷新']) + '</div>') +
+      '<div id="runtime-alert"></div><div id="runtime-metrics" class="grid metrics"></div>';
     function load() {
       api('/api/runtime').then(function (data) {
+        var alertNode = document.getElementById('runtime-alert');
+        var contextMeta = document.getElementById('runtime-context-meta');
+        var issues = [];
+        if (data.failedMappings) {
+          issues.push(String(data.failedMappings) + ' 条映射启动失败');
+        }
+        if (data.packetsDropped) {
+          issues.push('已有 ' + String(data.packetsDropped) + ' 条报文被丢弃');
+        }
+        if (data.lastWriterError) {
+          issues.push('最近写入错误：' + data.lastWriterError);
+        }
+        if (contextMeta) {
+          contextMeta.innerHTML = badgeGroup([
+            '每 3 秒自动刷新',
+            '共 ' + String(data.mappings || 0) + ' 条映射',
+            '当前 ' + String(data.activeConnections || 0) + ' 条活跃连接'
+          ]);
+        }
+        if (alertNode) {
+          alertNode.innerHTML = issues.length
+            ? '<div class="page-inline-alert">' + escapeHtml(issues.join('；')) + '</div>'
+            : '';
+        }
         document.getElementById('runtime-metrics').innerHTML = [
           metric('映射总数', data.mappings),
           metric('运行中', data.runningMappings),
-          metric('已停止', data.stoppedMappings),
-          metric('失败', data.failedMappings),
+          metric('失败', data.failedMappings, data.failedMappings ? 'danger' : ''),
+          metric('写入错误', data.lastWriterError || '-', data.lastWriterError ? 'danger' : ''),
+          metric('已丢弃报文', data.packetsDropped, data.packetsDropped ? 'danger' : ''),
+          metric('已停止', data.stoppedMappings, data.stoppedMappings ? 'warn' : ''),
           metric('活跃连接', data.activeConnections),
           metric('抓包队列', data.captureQueueSize + ' / ' + data.captureQueueCapacity),
+          metric('已写入报文', data.packetsWritten),
+          metric('已落盘报文', data.packetsSpilled),
           metric('落盘文件', data.spillFileCount),
           metric('落盘字节', data.spillBytes),
           metric('Payload 段文件', data.payloadFilesActive),
-          metric('Payload 占用', data.payloadBytesOnDisk),
-          metric('已写入报文', data.packetsWritten),
-          metric('已落盘报文', data.packetsSpilled),
-          metric('已丢弃报文', data.packetsDropped),
-          metric('写入错误', data.lastWriterError || '-')
+          metric('Payload 占用', data.payloadBytesOnDisk)
         ].join('');
       }).catch(function (error) {
-        view.innerHTML = pageHead('运行状态', '') + '<p class="error-text">' + escapeHtml(error.message) + '</p>';
+        view.innerHTML = pageHead(PAGE_COPY.runtime.title, '') + '<p class="error-text">' + escapeHtml(error.message) + '</p>';
       });
     }
     load();
@@ -271,7 +346,7 @@
 
   function renderMappings() {
     clearTimer();
-    view.innerHTML = pageHead('映射配置', '运行时转发规则管理', '<button id="mapping-create" type="button">新建映射</button>') +
+    view.innerHTML = pageHead(PAGE_COPY.mappings.title, PAGE_COPY.mappings.subtitle, '<button id="mapping-create" type="button">新建映射</button>') +
       '<section class="panel"><div class="panel-head"><h2>映射列表</h2><button id="mapping-refresh" class="compact-button" type="button">刷新</button></div>' +
       '<div class="panel-body panel-stack"><div class="table-wrap"><table><thead><tr><th>ID</th><th>名称</th><th>监听</th><th>转发</th><th>状态</th><th>连接数</th><th>最近错误</th><th></th></tr></thead><tbody id="mapping-rows"></tbody></table></div>' +
       '<p id="mapping-message" class="form-message"></p></div></section>';
@@ -312,7 +387,7 @@
         '<td>' + item.activeConnections + '</td>' +
         '<td class="error-text">' + escapeHtml(item.lastError || '') + '</td>' +
         '<td class="actions">' + renderMappingActionButtons(item) + '</td></tr>';
-    }).join('') : emptyTableRow(8, '当前没有映射配置，可以先新建一条映射。');
+    }).join('') : emptyTableRow(8, '当前还没有映射。先新建一条映射，再开始监听和转发。');
     bindMappingActions();
   }
 
@@ -364,9 +439,14 @@
           return;
         }
         if (action === 'delete') {
-          if (!window.confirm('确认删除映射 ' + id + ' 吗？')) {
-            return;
-          }
+          openConfirmDialog({
+            title: '删除映射 #' + id,
+            description: '删除后会移除这条转发规则，新的入站连接将不再按该映射处理。已建立连接是否中断取决于服务端当前状态。',
+            confirmLabel: '删除映射',
+            tone: 'danger',
+            action: { type: 'delete-mapping', mappingId: id }
+          });
+          return;
         }
         mappingAction(id, action);
       });
@@ -403,46 +483,61 @@
   function renderMappingModal() {
     var editing = state.mappingEditor.mode === 'edit';
     modalTitle.textContent = editing ? '编辑映射 #' + state.mappingEditor.mappingId : '新建映射';
+    modal.setAttribute('aria-describedby', 'mapping-dialog-description');
     modalBody.innerHTML =
       '<div class="modal-body-shell">' +
+      '<p id="mapping-dialog-description" class="dialog-description">维护监听端口、转发目标和协议选项。保存后会立即影响对应映射的运行行为。</p>' +
       '<form id="mapping-form" class="form-grid">' +
       '<input type="hidden" id="mapping-id">' +
-      '<div><label>名称</label><input id="mapping-name" required></div>' +
-      '<div><label>监听端口</label><input id="mapping-listen-port" type="number" min="0" max="65535" required></div>' +
+      '<section class="dialog-section"><div class="dialog-section-head"><h3>基本信息</h3><p>用于标识这条映射，便于后续巡检和排障。</p></div>' +
+      '<div class="form-grid"><div><label>名称</label><input id="mapping-name" required></div>' +
+      '<label class="check-row"><input id="mapping-enabled" type="checkbox" checked> 启用这条映射</label></div></section>' +
+      '<section class="dialog-section"><div class="dialog-section-head"><h3>监听配置</h3><p>修改监听端口会影响新的入站连接；协议切换会改变当前监听端的解析方式。</p></div>' +
+      '<div class="form-grid"><div><label>监听端口</label><input id="mapping-listen-port" type="number" min="0" max="65535" required></div>' +
       '<div><label>监听协议</label><select id="mapping-listen-protocol"><option value="tcp">tcp</option><option value="http">http</option></select></div>' +
       '<label class="check-row"><input id="mapping-listen-tls-enabled" type="checkbox"> 启用监听 TLS</label>' +
+      '<p id="mapping-listen-tls-hint" class="field-hint"></p>' +
       '<div id="mapping-listen-tls-fields">' +
       '<div><label>监听证书文件</label><input id="mapping-listen-cert-file"></div>' +
       '<div><label>监听私钥文件</label><input id="mapping-listen-key-file"></div>' +
       '<div><label>监听私钥密码</label><input id="mapping-listen-key-password" type="password"></div>' +
-      '</div>' +
+      '</div></div></section>' +
+      '<section class="dialog-section"><div class="dialog-section-head"><h3>转发配置</h3><p>定义后端目标和出站协议。开启 TLS 后可以指定 SNI 和证书校验策略。</p></div>' +
+      '<div class="form-grid">' +
       '<div><label>转发主机</label><input id="mapping-forward-host" required></div>' +
       '<div><label>转发端口</label><input id="mapping-forward-port" type="number" min="0" max="65535" required></div>' +
       '<div><label>转发协议</label><select id="mapping-forward-protocol"><option value="tcp">tcp</option><option value="http">http</option></select></div>' +
       '<label class="check-row"><input id="mapping-forward-tls-enabled" type="checkbox"> 启用转发 TLS</label>' +
+      '<p id="mapping-forward-tls-hint" class="field-hint"></p>' +
       '<div id="mapping-forward-tls-fields">' +
       '<div><label>转发 SNI 主机</label><input id="mapping-forward-sni-host"></div>' +
       '<label class="check-row"><input id="mapping-forward-insecure" type="checkbox"> 跳过证书校验</label>' +
+      '<p class="field-hint">仅建议测试环境使用，生产环境更适合提供受信任证书链。</p>' +
       '<div><label>转发信任证书文件</label><input id="mapping-forward-trust-cert"></div>' +
       '</div>' +
-      '<div id="mapping-http-fields">' +
+      '</div></section>' +
+      '<section id="mapping-http-fields" class="dialog-section">' +
+      '<div class="dialog-section-head"><h3>HTTP 高级选项</h3><p>仅在监听端或转发端使用 HTTP 协议时生效。</p></div>' +
+      '<div class="form-grid">' +
       '<label class="check-row"><input id="mapping-http-rewrite-host" type="checkbox" checked> 重写 Host</label>' +
       '<label class="check-row"><input id="mapping-http-add-x-forwarded" type="checkbox" checked> 添加 X-Forwarded 头</label>' +
       '<div><label>HTTP 最大对象大小</label><input id="mapping-http-max-object-size" type="number" min="1" value="1048576"></div>' +
-      '</div>' +
-      '<label class="check-row"><input id="mapping-enabled" type="checkbox" checked> 启用</label>' +
+      '</div></section>' +
       '<p id="mapping-modal-message" class="form-message"></p>' +
       '<div class="modal-actions">' +
-      '<button type="submit"' + (state.mappingEditor.submitting ? ' disabled' : '') + '>保存</button>' +
       '<button id="mapping-cancel" class="secondary-button" type="button"' + (state.mappingEditor.submitting ? ' disabled' : '') + '>取消</button>' +
+      '<button type="submit"' + (state.mappingEditor.submitting ? ' disabled' : '') + '>保存</button>' +
       '</div>' +
       '</form></div>';
+    setModalDismissState(state.mappingEditor.submitting);
     document.getElementById('mapping-form').addEventListener('submit', saveMapping);
     document.getElementById('mapping-cancel').addEventListener('click', function () {
       closeModal();
     });
     bindMappingFormToggles();
     bindMappingFormDirtyState();
+    syncMappingFormVisibility();
+    focusModalElement('#mapping-name');
   }
 
   function fillMappingForm(item) {
@@ -567,9 +662,17 @@
     var listenProtocol = valueOf('mapping-listen-protocol') || 'tcp';
     var forwardProtocol = valueOf('mapping-forward-protocol') || 'tcp';
     var isHttp = listenProtocol === 'http' || forwardProtocol === 'http';
+    var listenTlsEnabled = document.getElementById('mapping-listen-tls-enabled').checked;
+    var forwardTlsEnabled = document.getElementById('mapping-forward-tls-enabled').checked;
     document.getElementById('mapping-http-fields').hidden = !isHttp;
-    document.getElementById('mapping-listen-tls-fields').hidden = !document.getElementById('mapping-listen-tls-enabled').checked;
-    document.getElementById('mapping-forward-tls-fields').hidden = !document.getElementById('mapping-forward-tls-enabled').checked;
+    document.getElementById('mapping-listen-tls-fields').hidden = !listenTlsEnabled;
+    document.getElementById('mapping-forward-tls-fields').hidden = !forwardTlsEnabled;
+    document.getElementById('mapping-listen-tls-hint').textContent = listenTlsEnabled
+      ? '请提供监听端使用的证书和私钥文件。'
+      : '如需在监听端终止 TLS，请开启后补充证书文件。';
+    document.getElementById('mapping-forward-tls-hint').textContent = forwardTlsEnabled
+      ? '将以 TLS 方式连接后端，可继续配置 SNI 和证书校验策略。'
+      : '后端使用明文 TCP 连接；如目标服务要求 TLS，请在这里开启。';
   }
 
   function saveMapping(event) {
@@ -608,13 +711,14 @@
     var request = action === 'delete'
       ? api('/api/mappings/' + id, { method: 'DELETE' })
       : api('/api/mappings/' + id + '/' + action, { method: 'POST' });
-    request.then(function () {
+    return request.then(function () {
       delete state.mappingActionPending[id];
       loadMappings();
     }).catch(function (error) {
       delete state.mappingActionPending[id];
       renderMappingRows();
       setError('mapping-message', error);
+      throw error;
     });
   }
 
@@ -646,21 +750,30 @@
 
   function renderConnections() {
     clearTimer();
-    view.innerHTML = pageHead('连接记录', '已保存的 TCP 连接记录', heroBadge('条件筛选') + heroBadge('详情弹层')) +
-      '<section class="panel"><div class="panel-body">' +
-      '<div class="toolbar">' +
-      field('connection-mapping-id', '映射 ID') +
-      field('connection-client-ip', '客户端 IP') +
+    view.innerHTML = pageHead(PAGE_COPY.connections.title, PAGE_COPY.connections.subtitle) +
+      '<section class="panel"><form id="connection-filter-form" class="panel-body panel-stack filter-form">' +
+      '<div class="filter-form-grid">' +
+      field('connection-mapping-id', '映射 ID', '例如 7') +
+      field('connection-client-ip', '客户端 IP', '例如 10.0.0.8') +
       selectField('connection-status', '状态', ['', 'OPENING', 'OPEN', 'CLOSED', 'FAILED']) +
-      field('connection-from', '开始时间') +
-      field('connection-to', '结束时间') +
-      '<button id="connection-search" type="button">查询</button>' +
-      '</div><div class="table-wrap"><table><thead><tr><th>ID</th><th>映射</th><th>客户端</th><th>监听</th><th>目标</th><th>状态</th><th>打开时间</th><th>字节数</th><th></th></tr></thead><tbody id="connection-rows"></tbody></table></div>' +
+      timeField('connection-from', '开始时间') +
+      timeField('connection-to', '结束时间') +
+      '</div>' +
+      '<div class="filter-form-actions"><button id="connection-search" type="submit">查询</button><button id="connection-reset" class="secondary-button" type="reset">重置</button></div>' +
+      '<div class="table-wrap"><table><thead><tr><th>ID</th><th>映射</th><th>客户端</th><th>监听</th><th>目标</th><th>状态</th><th>打开时间</th><th>字节数</th><th></th></tr></thead><tbody id="connection-rows"></tbody></table></div>' +
       '<div class="pager"><button id="connection-prev" class="secondary-button" type="button">上一页</button><span id="connection-page-info"></span><button id="connection-next" class="secondary-button" type="button">下一页</button></div>' +
-      '<p id="connection-message" class="form-message"></p></div></section>';
-    document.getElementById('connection-search').addEventListener('click', function () {
+      '<p id="connection-message" class="form-message"></p></form></section>';
+    document.getElementById('connection-filter-form').addEventListener('submit', function (event) {
+      event.preventDefault();
       state.connectionPage = 1;
       loadConnections();
+    });
+    document.getElementById('connection-filter-form').addEventListener('reset', function () {
+      window.setTimeout(function () {
+        state.connectionPage = 1;
+        setMessage('connection-message', '', 'error');
+        loadConnections();
+      }, 0);
     });
     document.getElementById('connection-prev').addEventListener('click', function () {
       state.connectionPage = Math.max(1, state.connectionPage - 1);
@@ -674,6 +787,8 @@
   }
 
   function loadConnections() {
+    state.connectionLoading = true;
+    setFilterLoadingState('connection', true);
     api('/api/connections' + qs({
       mappingId: valueOf('connection-mapping-id'),
       clientIp: valueOf('connection-client-ip'),
@@ -696,13 +811,16 @@
           '<td>' + item.bytesUp + ' 上行<br>' + item.bytesDown + ' 下行</td>' +
           '<td><button class="compact-button" type="button" data-connection-detail="' + item.id + '">详情</button></td>' +
           '</tr>';
-      }).join('') : emptyTableRow(9, '当前筛选条件下没有连接记录。');
+      }).join('') : emptyTableRow(9, '当前筛选条件下没有连接记录。请调整映射、客户端或时间范围后重试。');
       bindConnectionDetails();
       document.getElementById('connection-page-info').textContent = '第 ' + page.page + ' 页 / 共 ' + Math.max(1, Math.ceil(page.total / page.pageSize)) + ' 页';
       document.getElementById('connection-prev').disabled = page.page <= 1;
       document.getElementById('connection-next').disabled = page.page * page.pageSize >= page.total;
     }).catch(function (error) {
       setError('connection-message', error);
+    }).then(function () {
+      state.connectionLoading = false;
+      setFilterLoadingState('connection', false);
     });
   }
 
@@ -721,37 +839,67 @@
       window.clearTimeout(packetFeedbackTimer);
       packetFeedbackTimer = null;
     }
+    modal.classList.remove('modal-confirm');
     modal.classList.remove('modal-packet-detail');
     modal.classList.remove('modal-mapping-editor');
     modal.classList.remove('modal-packet-purge');
     state.packetDetail = null;
     modalTitle.textContent = '连接 #' + data.id;
-    modalBody.innerHTML = detailGrid(data, ['mappingId', 'clientIp', 'clientPort', 'listenIp', 'listenPort', 'forwardHost', 'forwardPort', 'remoteIp', 'remotePort', 'status', 'closeReason', 'openedAt', 'closedAt', 'bytesUp', 'bytesDown', 'errorMessage']) +
-      '<div class="panel-body"><h3>最近报文</h3><div class="table-wrap"><table><thead><tr><th>ID</th><th>方向</th><th>大小</th><th>捕获大小</th><th>接收时间</th></tr></thead><tbody>' +
+    modal.setAttribute('aria-describedby', 'connection-dialog-description');
+    modalBody.innerHTML = '<p id="connection-dialog-description" class="dialog-description">查看连接生命周期、关闭原因和最近报文，并继续追踪该连接关联的报文内容。</p>' +
+      detailGrid(data, ['mappingId', 'clientIp', 'clientPort', 'listenIp', 'listenPort', 'forwardHost', 'forwardPort', 'remoteIp', 'remotePort', 'status', 'closeReason', 'openedAt', 'closedAt', 'bytesUp', 'bytesDown', 'errorMessage']) +
+      '<div class="panel-body"><div class="dialog-section-head"><h3>最近报文</h3><button class="secondary-button" type="button" id="connection-open-packets">查看该连接的全部报文</button></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>方向</th><th>大小</th><th>捕获大小</th><th>接收时间</th><th></th></tr></thead><tbody>' +
       (data.recentPackets || []).map(function (packet) {
-        return '<tr><td>' + packet.id + '</td><td>' + escapeHtml(translateDirection(packet.direction)) + '</td><td>' + packet.payloadSize + '</td><td>' + packet.capturedSize + '</td><td>' + escapeHtml(packet.receivedAt) + '</td></tr>';
-      }).join('') + '</tbody></table></div></div>';
+        return '<tr><td>' + packet.id + '</td><td>' + escapeHtml(translateDirection(packet.direction)) + '</td><td>' + packet.payloadSize + '</td><td>' + packet.capturedSize + '</td><td>' + escapeHtml(packet.receivedAt) + '</td><td><button class="compact-button" type="button" data-connection-packet-detail="' + packet.id + '">查看报文</button></td></tr>';
+      }).join('') + ((data.recentPackets || []).length ? '' : emptyTableRow(6, '该连接下暂时没有报文记录。')) +
+      '</tbody></table></div><p id="connection-detail-message" class="form-message"></p></div>';
     openModal('connection-detail');
+    setModalDismissState(false);
+    document.getElementById('connection-open-packets').addEventListener('click', function () {
+      goToPacketList({
+        connectionId: data.id,
+        mappingId: data.mappingId
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-connection-packet-detail]'), function (button) {
+      button.addEventListener('click', function () {
+        openPacketDetailById(button.getAttribute('data-connection-packet-detail'), 'connection-detail-message');
+      });
+    });
+    focusModalElement('#connection-open-packets');
   }
 
   function renderPackets() {
     clearTimer();
-    view.innerHTML = pageHead('报文记录', '已捕获报文摘要', '<button id="packet-purge-open" class="danger-button" type="button">清理记录</button>') +
-      '<section class="panel"><div class="panel-body">' +
-      '<div class="toolbar">' +
-      field('packet-mapping-id', '映射 ID') +
-      field('packet-connection-id', '连接 ID') +
+    view.innerHTML = pageHead(PAGE_COPY.packets.title, PAGE_COPY.packets.subtitle, '<button id="packet-purge-open" class="danger-button" type="button">清理记录</button>') +
+      '<section class="panel"><form id="packet-filter-form" class="panel-body panel-stack filter-form">' +
+      '<div class="filter-form-grid">' +
+      field('packet-mapping-id', '映射 ID', '例如 7') +
+      field('packet-connection-id', '连接 ID', '例如 123') +
       selectField('packet-direction', '方向', ['', 'REQUEST', 'RESPONSE']) +
-      field('packet-from', '开始时间') +
-      field('packet-to', '结束时间') +
-      '<button id="packet-search" type="button">查询</button>' +
-      '</div><div class="table-wrap"><table><thead><tr><th>ID</th><th>连接</th><th>映射</th><th>方向</th><th>客户端</th><th>目标</th><th>大小</th><th>接收时间</th><th></th></tr></thead><tbody id="packet-rows"></tbody></table></div>' +
+      timeField('packet-from', '开始时间') +
+      timeField('packet-to', '结束时间') +
+      '</div>' +
+      '<div class="filter-form-actions"><button id="packet-search" type="submit">查询</button><button id="packet-reset" class="secondary-button" type="reset">重置</button></div>' +
+      '<div class="table-wrap"><table><thead><tr><th>ID</th><th>连接</th><th>映射</th><th>方向</th><th>客户端</th><th>目标</th><th>大小</th><th>接收时间</th><th></th></tr></thead><tbody id="packet-rows"></tbody></table></div>' +
       '<div class="pager"><button id="packet-prev" class="secondary-button" type="button">上一页</button><span id="packet-page-info"></span><button id="packet-next" class="secondary-button" type="button">下一页</button></div>' +
-      '<p id="packet-message" class="form-message"></p></div></section>';
+      '<p id="packet-message" class="form-message"></p></form></section>';
     document.getElementById('packet-purge-open').addEventListener('click', openPacketPurgeModal);
-    document.getElementById('packet-search').addEventListener('click', function () {
+    if (state.pendingPacketFilters) {
+      applyFilters(state.pendingPacketFilters);
+      state.pendingPacketFilters = null;
+    }
+    document.getElementById('packet-filter-form').addEventListener('submit', function (event) {
+      event.preventDefault();
       state.packetPage = 1;
       loadPackets();
+    });
+    document.getElementById('packet-filter-form').addEventListener('reset', function () {
+      window.setTimeout(function () {
+        state.packetPage = 1;
+        setMessage('packet-message', '', 'error');
+        loadPackets();
+      }, 0);
     });
     document.getElementById('packet-prev').addEventListener('click', function () {
       state.packetPage = Math.max(1, state.packetPage - 1);
@@ -774,27 +922,59 @@
 
   function renderPacketPurgeModal() {
     modalTitle.textContent = '清理报文记录';
+    if (state.packetPurge.step === 'confirm') {
+      modal.setAttribute('aria-describedby', 'packet-purge-description');
+      modalBody.innerHTML =
+        '<div class="modal-body-shell modal-danger-shell">' +
+        '<p id="packet-purge-description" class="dialog-description">即将执行高风险清理。该操作会删除 SQLite 中的报文记录，并同步删除对应 payload 文件，无法恢复。</p>' +
+        '<div class="dialog-danger-summary">' +
+        '<strong>' + escapeHtml(packetPurgeScopeLabel(state.packetPurge.scope)) + '</strong>' +
+        '<span>' + escapeHtml(packetPurgeScopeDescription(state.packetPurge.scope)) + '</span>' +
+        '</div>' +
+        '<p id="packet-purge-message" class="form-message">' + escapeHtml(state.packetPurge.error || '') + '</p>' +
+        '<div class="modal-actions">' +
+        '<button id="packet-purge-back" class="secondary-button" type="button"' + (state.packetPurge.submitting ? ' disabled' : '') + '>返回选择</button>' +
+        '<button id="packet-purge-confirm" class="danger-button" type="button"' + (state.packetPurge.submitting ? ' disabled' : '') + '>' +
+        escapeHtml(packetPurgeConfirmLabel(state.packetPurge.scope, state.packetPurge.submitting)) +
+        '</button>' +
+        '</div></div>';
+      setModalDismissState(state.packetPurge.submitting);
+      document.getElementById('packet-purge-back').addEventListener('click', function () {
+        state.packetPurge.step = 'select';
+        state.packetPurge.error = null;
+        renderPacketPurgeModal();
+      });
+      document.getElementById('packet-purge-confirm').addEventListener('click', function () {
+        purgePackets(state.packetPurge.scope);
+      });
+      focusModalElement('#packet-purge-back');
+      return;
+    }
+    modal.removeAttribute('aria-describedby');
     modalBody.innerHTML =
       '<div class="modal-body-shell modal-danger-shell">' +
-      '<p class="modal-copy">该操作会删除 SQLite 中的报文记录，并同步删除对应 payload 文件，无法恢复。</p>' +
+      '<p class="dialog-description">先选择清理范围，再确认执行。影响越大的操作会使用更谨慎的确认步骤。</p>' +
       '<div class="danger-note-list">' +
-      '<div class="danger-note"><strong>清空非当日</strong><span>保留当前报文日期的数据，删除更早日期的数据。</span></div>' +
-      '<div class="danger-note"><strong>清空全部</strong><span>删除所有报文记录和 payload 文件。</span></div>' +
+      '<button class="danger-note danger-note-action" type="button" data-packet-purge-scope="NON_TODAY"><strong>清空非当日</strong><span>保留今天的数据，删除更早日期的报文和 payload 文件。</span></button>' +
+      '<button class="danger-note danger-note-action" type="button" data-packet-purge-scope="ALL"><strong>清空全部</strong><span>删除全部报文记录和 payload 文件，适合明确要从零开始时使用。</span></button>' +
       '</div>' +
       '<p id="packet-purge-message" class="form-message">' + escapeHtml(state.packetPurge.error || '') + '</p>' +
-      '<div class="modal-actions modal-actions-danger">' +
-      '<button class="danger-button" type="button" data-packet-purge="NON_TODAY"' + (state.packetPurge.submitting ? ' disabled' : '') + '>清空非当日</button>' +
-      '<button class="danger-button" type="button" data-packet-purge="ALL"' + (state.packetPurge.submitting ? ' disabled' : '') + '>清空全部</button>' +
+      '<div class="modal-actions">' +
       '<button id="packet-purge-cancel" class="secondary-button" type="button"' + (state.packetPurge.submitting ? ' disabled' : '') + '>取消</button>' +
       '</div></div>';
+    setModalDismissState(state.packetPurge.submitting);
     document.getElementById('packet-purge-cancel').addEventListener('click', function () {
       closeModal();
     });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-packet-purge]'), function (button) {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-packet-purge-scope]'), function (button) {
       button.addEventListener('click', function () {
-        purgePackets(button.getAttribute('data-packet-purge'));
+        state.packetPurge.scope = button.getAttribute('data-packet-purge-scope');
+        state.packetPurge.step = 'confirm';
+        state.packetPurge.error = null;
+        renderPacketPurgeModal();
       });
     });
+    focusModalElement('[data-packet-purge-scope]');
   }
 
   function purgePackets(scope) {
@@ -829,6 +1009,8 @@
   }
 
   function loadPackets() {
+    state.packetLoading = true;
+    setFilterLoadingState('packet', true);
     api('/api/packets' + qs({
       mappingId: valueOf('packet-mapping-id'),
       connectionId: valueOf('packet-connection-id'),
@@ -851,23 +1033,32 @@
           '<td>' + escapeHtml(item.receivedAt) + '</td>' +
           '<td><button class="compact-button" type="button" data-packet-detail="' + item.id + '">详情</button></td>' +
           '</tr>';
-      }).join('') : emptyTableRow(9, '当前筛选条件下没有报文记录。');
+      }).join('') : emptyTableRow(9, '当前筛选条件下没有报文记录。请调整连接、映射或时间范围后重试。');
       bindPacketDetails();
       document.getElementById('packet-page-info').textContent = '第 ' + page.page + ' 页 / 共 ' + Math.max(1, Math.ceil(page.total / page.pageSize)) + ' 页';
       document.getElementById('packet-prev').disabled = page.page <= 1;
       document.getElementById('packet-next').disabled = page.page * page.pageSize >= page.total;
     }).catch(function (error) {
       setError('packet-message', error);
+    }).then(function () {
+      state.packetLoading = false;
+      setFilterLoadingState('packet', false);
     });
   }
 
   function bindPacketDetails() {
     Array.prototype.forEach.call(document.querySelectorAll('[data-packet-detail]'), function (button) {
       button.addEventListener('click', function () {
-        api('/api/packets/' + button.getAttribute('data-packet-detail')).then(showPacketDetail).catch(function (error) {
-          setError('packet-message', error);
-        });
+        openPacketDetailById(button.getAttribute('data-packet-detail'), 'packet-message');
       });
+    });
+  }
+
+  function openPacketDetailById(id, errorTarget) {
+    api('/api/packets/' + id).then(showPacketDetail).catch(function (error) {
+      if (errorTarget) {
+        setError(errorTarget, error);
+      }
     });
   }
 
@@ -878,6 +1069,7 @@
       textTab: 'raw',
       feedback: null
     };
+    modal.classList.remove('modal-confirm');
     modal.classList.remove('modal-mapping-editor');
     modal.classList.remove('modal-packet-purge');
     modal.classList.add('modal-packet-detail');
@@ -895,8 +1087,71 @@
     return item.protocolFamily || '-';
   }
 
-  function field(id, label) {
-    return '<div><label for="' + id + '">' + escapeHtml(label) + '</label><input id="' + id + '"></div>';
+  function field(id, label, placeholder) {
+    return '<div><label for="' + id + '">' + escapeHtml(label) + '</label><input id="' + id + '"' +
+      (placeholder ? ' placeholder="' + escapeHtml(placeholder) + '"' : '') + '></div>';
+  }
+
+  function timeField(id, label) {
+    return field(id, label, FILTER_TIME_PLACEHOLDER);
+  }
+
+  function applyFilters(filters) {
+    if (!filters) {
+      return;
+    }
+    Object.keys(filters).forEach(function (key) {
+      var node = document.getElementById(key);
+      if (node) {
+        node.value = filters[key] == null ? '' : String(filters[key]);
+      }
+    });
+  }
+
+  function goToPacketList(filters) {
+    state.pendingPacketFilters = {
+      'packet-mapping-id': filters.mappingId || '',
+      'packet-connection-id': filters.connectionId || ''
+    };
+    closeModal(true);
+    if (window.location.pathname !== '/packets') {
+      window.history.pushState({}, '', '/packets');
+      route();
+      return;
+    }
+    applyFilters(state.pendingPacketFilters);
+    state.pendingPacketFilters = null;
+    state.packetPage = 1;
+    loadPackets();
+  }
+
+  function setFilterLoadingState(prefix, loading) {
+    var submit = document.getElementById(prefix + '-search');
+    var reset = document.getElementById(prefix + '-reset');
+    if (submit) {
+      submit.disabled = !!loading;
+      submit.textContent = loading ? '查询中...' : '查询';
+    }
+    if (reset) {
+      reset.disabled = !!loading;
+    }
+  }
+
+  function packetPurgeScopeLabel(scope) {
+    return scope === 'ALL' ? '清空全部' : '清空非当日';
+  }
+
+  function packetPurgeScopeDescription(scope) {
+    return scope === 'ALL'
+      ? '会删除所有报文记录和 payload 文件。'
+      : '会保留今天的数据，删除更早日期的报文和 payload 文件。';
+  }
+
+  function packetPurgeConfirmLabel(scope, submitting) {
+    if (submitting) {
+      return '清理中...';
+    }
+    return scope === 'ALL' ? '确认清空全部' : '确认清空非当日';
   }
 
   function selectField(id, label, values) {
@@ -922,22 +1177,31 @@
       detail.textTab = 'raw';
     }
     modalTitle.textContent = '报文 #' + data.id;
+    modal.setAttribute('aria-describedby', 'packet-dialog-description');
     modalBody.innerHTML =
       '<div class="packet-detail-shell">' +
+      '<p id="packet-dialog-description" class="dialog-description">查看报文来源、预览内容和存储状态，并继续按连接或映射追踪上下文。</p>' +
       renderPacketSummary(data) +
       '<section class="packet-content-section">' +
       renderPacketToolbar(data, detail) +
       renderPacketNotices(data, detail) +
       '<div class="preview-box preview-box-single"><pre id="packet-preview-content"></pre></div>' +
-      (http && http.startLine ? '<div class="preview-meta">HTTP Start Line: ' + escapeHtml(http.startLine) + '</div>' : '') +
+      (http && http.startLine ? '<div class="preview-meta">HTTP 起始行：' + escapeHtml(http.startLine) + '</div>' : '') +
       '</section>' +
       '</div>';
     document.getElementById('packet-preview-content').textContent = packetCurrentViewContent(data, detail);
     bindPacketDetailActions();
+    setModalDismissState(false);
+    focusModalElement('[data-packet-context-nav], [data-packet-tab], [data-packet-copy]');
   }
 
   function renderPacketSummary(data) {
     return '<section class="packet-summary">' +
+      '<div class="page-context-meta packet-context-meta">' +
+      heroBadge('来自连接 #' + data.connectionId) +
+      heroBadge('映射 #' + data.mappingId) +
+      '<button class="secondary-button" type="button" data-packet-context-nav="connection">按此连接筛选</button>' +
+      '</div>' +
       '<div class="packet-fact-grid">' +
       packetFact('报文 ID', data.id) +
       packetFact('方向', translateDirection(data.direction)) +
@@ -1013,6 +1277,17 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-packet-copy]'), function (button) {
       button.addEventListener('click', function () {
         copyPacketContent(button.getAttribute('data-packet-copy'));
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-packet-context-nav]'), function (button) {
+      button.addEventListener('click', function () {
+        if (!state.packetDetail) {
+          return;
+        }
+        goToPacketList({
+          connectionId: state.packetDetail.data.connectionId,
+          mappingId: state.packetDetail.data.mappingId
+        });
       });
     });
   }
@@ -1296,10 +1571,133 @@
     return textarea.value;
   }
 
+  function focusModalElement(selector) {
+    window.setTimeout(function () {
+      if (modal.classList.contains('hidden')) {
+        return;
+      }
+      var target = selector ? modal.querySelector(selector) : null;
+      if (!target) {
+        target = modal.querySelector('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]');
+      }
+      if (target && target.focus) {
+        target.focus();
+      }
+    }, 0);
+  }
+
+  function modalFocusableElements() {
+    return Array.prototype.filter.call(
+      modal.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'),
+      function (node) {
+        return !node.hidden && node.offsetParent !== null;
+      }
+    );
+  }
+
+  function setModalDismissState(locked) {
+    if (modalClose) {
+      modalClose.disabled = !!locked;
+      modalClose.setAttribute('aria-disabled', locked ? 'true' : 'false');
+    }
+  }
+
+  function openConfirmDialog(options) {
+    state.confirmDialog = {
+      open: true,
+      title: options.title || '确认操作',
+      description: options.description || '',
+      confirmLabel: options.confirmLabel || '确认',
+      cancelLabel: options.cancelLabel || '取消',
+      tone: options.tone || 'default',
+      action: options.action || null,
+      submitting: false,
+      error: null,
+      returnTo: options.returnTo || null
+    };
+    modal.classList.add('modal-confirm');
+    modal.classList.remove('modal-mapping-editor');
+    modal.classList.remove('modal-packet-purge');
+    modal.classList.remove('modal-packet-detail');
+    if (modal.classList.contains('hidden')) {
+      openModal('confirm');
+    } else {
+      state.modalType = 'confirm';
+    }
+    renderConfirmDialog();
+  }
+
+  function renderConfirmDialog() {
+    var dialog = state.confirmDialog;
+    modalTitle.textContent = dialog.title;
+    modal.setAttribute('aria-describedby', 'confirm-dialog-description');
+    modalBody.innerHTML =
+      '<div class="modal-body-shell">' +
+      '<p id="confirm-dialog-description" class="dialog-description">' + escapeHtml(dialog.description) + '</p>' +
+      '<p id="confirm-dialog-message" class="form-message">' + escapeHtml(dialog.error || '') + '</p>' +
+      '<div class="modal-actions">' +
+      '<button id="confirm-dialog-cancel" class="secondary-button" type="button"' + (dialog.submitting ? ' disabled' : '') + '>' + escapeHtml(dialog.cancelLabel) + '</button>' +
+      '<button id="confirm-dialog-submit" class="' + (dialog.tone === 'danger' ? 'danger-button' : '') + '" type="button"' + (dialog.submitting ? ' disabled' : '') + '>' +
+      escapeHtml(dialog.submitting ? '处理中...' : dialog.confirmLabel) +
+      '</button>' +
+      '</div></div>';
+    setModalDismissState(dialog.submitting);
+    document.getElementById('confirm-dialog-cancel').addEventListener('click', function () {
+      cancelConfirmDialog();
+    });
+    document.getElementById('confirm-dialog-submit').addEventListener('click', function () {
+      submitConfirmDialog();
+    });
+    focusModalElement('#confirm-dialog-cancel');
+  }
+
+  function cancelConfirmDialog() {
+    if (state.confirmDialog.returnTo === 'mapping-editor') {
+      state.confirmDialog = defaultConfirmDialogState();
+      modal.classList.remove('modal-confirm');
+      modal.classList.add('modal-mapping-editor');
+      state.modalType = 'mapping-editor';
+      renderMappingModal();
+      restoreMappingFormValues(state.mappingEditor.draftValue);
+      state.mappingEditor.dirty = true;
+      modal.removeAttribute('aria-describedby');
+      focusModalElement('#mapping-name');
+      return;
+    }
+    closeModal(true);
+  }
+
+  function submitConfirmDialog() {
+    if (!state.confirmDialog.action) {
+      closeModal(true);
+      return;
+    }
+    state.confirmDialog.submitting = true;
+    state.confirmDialog.error = null;
+    renderConfirmDialog();
+    if (state.confirmDialog.action.type === 'delete-mapping') {
+      mappingAction(state.confirmDialog.action.mappingId, 'delete').then(function () {
+        closeModal(true);
+      }).catch(function (error) {
+        state.confirmDialog.submitting = false;
+        state.confirmDialog.error = error.message;
+        renderConfirmDialog();
+      });
+      return;
+    }
+    if (state.confirmDialog.action.type === 'discard-mapping-close') {
+      closeModal(true);
+    }
+  }
+
   function openModal(type) {
+    if (modal.classList.contains('hidden')) {
+      state.modalReturnFocus = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    }
     state.modalType = type || null;
     document.body.classList.add('modal-open');
     modal.classList.remove('hidden');
+    setModalDismissState(false);
   }
 
   function closeModal(force) {
@@ -1313,21 +1711,41 @@
     state.packetDetail = null;
     state.mappingEditor = defaultMappingEditorState();
     state.packetPurge = defaultPacketPurgeState();
+    state.confirmDialog = defaultConfirmDialogState();
     state.modalType = null;
     modal.classList.remove('modal-packet-detail');
     modal.classList.remove('modal-mapping-editor');
     modal.classList.remove('modal-packet-purge');
+    modal.classList.remove('modal-confirm');
     document.body.classList.remove('modal-open');
     modal.classList.add('hidden');
     modalTitle.textContent = '';
     modalBody.innerHTML = '';
+    modal.removeAttribute('aria-describedby');
+    if (state.modalReturnFocus && document.contains(state.modalReturnFocus)) {
+      state.modalReturnFocus.focus();
+    }
+    state.modalReturnFocus = null;
   }
 
   function canCloseModal() {
     if (state.modalType === 'mapping-editor' && state.mappingEditor.open && state.mappingEditor.dirty && !state.mappingEditor.submitting) {
-      return window.confirm('表单内容尚未保存，确认关闭吗？');
+      state.mappingEditor.draftValue = readMappingForm();
+      openConfirmDialog({
+        title: '放弃未保存的修改',
+        description: '当前表单内容尚未保存。关闭后这些修改会丢失。',
+        confirmLabel: '放弃修改',
+        tone: 'danger',
+        action: { type: 'discard-mapping-close' },
+        returnTo: 'mapping-editor'
+      });
+      return false;
     }
-    return true;
+    if (state.modalType === 'confirm' && state.confirmDialog.returnTo === 'mapping-editor' && !state.confirmDialog.submitting) {
+      cancelConfirmDialog();
+      return false;
+    }
+    return !(state.mappingEditor.submitting || state.packetPurge.submitting || state.confirmDialog.submitting);
   }
 
   function clearTimer() {
@@ -1381,6 +1799,23 @@
     }
   });
   document.addEventListener('keydown', function (event) {
+    if (!modal.classList.contains('hidden') && event.key === 'Tab') {
+      var focusable = modalFocusableElements();
+      var first = focusable[0];
+      var last = focusable[focusable.length - 1];
+      if (!focusable.length) {
+        event.preventDefault();
+      } else if (!modal.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
     if (event.key === 'Escape') {
       if (document.body.classList.contains('nav-open')) {
         toggleNav(false);

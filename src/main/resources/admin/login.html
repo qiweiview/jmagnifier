@@ -16,23 +16,25 @@
     <section class="login-hero">
       <div class="login-hero-card">
         <div class="brand-mark">JM</div>
-        <p class="eyebrow">Adaptive Layered Simplicity</p>
         <h1>jmagnifier 管理台</h1>
-        <p class="login-copy">保持界面简洁，按状态、配置、连接、报文逐层展开，让日常巡检和定位问题都更直接。</p>
+        <p class="login-copy">用于查看运行状态、维护映射配置，并排查连接和报文问题。</p>
         <div class="hero-points">
-          <span>实时状态</span>
-          <span>分层详情</span>
-          <span>白蓝配色</span>
+          <span>运行巡检</span>
+          <span>映射维护</span>
+          <span>连接排障</span>
         </div>
       </div>
     </section>
     <section class="login-panel">
-      <p class="eyebrow">Admin Access</p>
-      <h2>登录</h2>
-      <p class="login-copy">输入管理密码进入控制台。</p>
+      <h2>登录管理台</h2>
+      <p class="login-copy">输入管理密码后可查看运行状态、修改映射并排查连接与报文。</p>
+      <div class="login-notes">
+        <span>仅管理员可访问</span>
+        <span>登录失败时请检查当前服务端配置的管理密码</span>
+      </div>
       <form id="login-form" class="login-form">
         <label for="password">密码</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" autofocus>
+        <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
         <button id="login-submit" type="submit">进入控制台</button>
         <p id="login-message" class="form-message" role="status" aria-live="polite"></p>
       </form>
