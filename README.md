@@ -420,5 +420,5 @@ src/main/resources/config.yml           示例配置 | Sample configuration
 
 ## 许可证 | License
 
-仓库当前未声明许可证文件，如需开源分发或对外使用，请补充明确的许可证声明。  
-No license file is currently declared in the repository. Add an explicit license before open-source distribution or external reuse.
+本项目采用 `Apache License 2.0`。许可证全文见根目录 [LICENSE](/Users/liuqiwei/IdeaProjects/jmagnifier/LICENSE)。  
+This project is licensed under the `Apache License 2.0`. See [LICENSE](/Users/liuqiwei/IdeaProjects/jmagnifier/LICENSE) for the full text.
